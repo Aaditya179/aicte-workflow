@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.security import get_current_user, AuthenticatedUser
-from routers import demo
+from routers import demo, applications, audit
 
 app = FastAPI(
     title="AICTE Workflow & SLA Monitoring API",
@@ -28,6 +28,8 @@ app.add_middleware(
 
 # Routers
 app.include_router(demo.router, prefix="/api/v1")
+app.include_router(applications.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"])
 async def health_check():

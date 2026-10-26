@@ -2,13 +2,22 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.security import get_current_user, AuthenticatedUser
-from routers import demo, applications, audit
+from contextlib import asynccontextmanager
+from routers import demo, applications, audit, alerts, notifications, admin
+from services import scheduler
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize background scheduler if enabled
+    scheduler.start_background_scheduler()
+    yield
 
 app = FastAPI(
     title="AICTE Workflow & SLA Monitoring API",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS Middleware
@@ -30,6 +39,9 @@ app.add_middleware(
 app.include_router(demo.router, prefix="/api/v1")
 app.include_router(applications.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
+app.include_router(alerts.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"])
 async def health_check():

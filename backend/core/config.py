@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: Optional[str] = None
     FRONTEND_ORIGIN: str = "http://localhost:3000"
     SCHEDULER_ENABLED: bool = False
+    DEMO_PASSWORD: str = "password123"
     PORT: int = 8000
 
     model_config = SettingsConfigDict(

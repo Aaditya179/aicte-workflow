@@ -425,6 +425,21 @@ def run_once() -> Dict[str, Any]:
         except Exception as he:
             logger.warning(f"Health score recompute warning: {he}")
 
+        # ---------------------------------------------------------
+        # 8. POST-DECISION ASSURANCE RECHECK (§15.2)
+        # ---------------------------------------------------------
+        try:
+            import asyncio
+            from services.assurance import assurance_service
+            # Run async recheck in synchronous scheduler context
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(assurance_service.run_daily_post_decision_recheck())
+            else:
+                loop.run_until_complete(assurance_service.run_daily_post_decision_recheck())
+        except Exception as ae:
+            logger.warning(f"Assurance recheck warning: {ae}")
+
     except Exception as e:
         logger.exception(f"Scheduler execution error: {e}")
         errors.append(str(e))

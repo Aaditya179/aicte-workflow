@@ -7,6 +7,7 @@ import {
   ArrowLeft, CheckCircle2, Clock, AlertTriangle, XCircle, ChevronRight,
   RotateCcw, UserPlus, SendHorizonal, ChevronDown, Loader2, ShieldAlert, FileText
 } from 'lucide-react';
+import AssurancePanel from '@/components/AssurancePanel';
 
 interface Application {
   id: string;
@@ -236,6 +237,13 @@ function ApplicationDetailContent() {
               </div>
             )}
           </div>
+
+          {/* Decision Assurance Panel (§15.2) */}
+          <AssurancePanel
+            applicationId={app.id}
+            currentStage={app.current_stage}
+            onCommitSuccess={() => load()}
+          />
 
           {/* AI Case Summary & Deficiency Notice Assistant (§10.3) */}
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">

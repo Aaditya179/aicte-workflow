@@ -46,7 +46,7 @@ def _dt(val: Any) -> Optional[datetime]:
 
 
 def _day(dt: datetime) -> str:
-    return f"{dt.day} {dt.strftime('%b')}"
+    return clock.display_date(dt)
 
 
 def _plural(n: int, word: str, plural: Optional[str] = None) -> str:
@@ -274,8 +274,10 @@ def _numbers_supported(summary: str, facts: List[Dict[str, Any]]) -> bool:
     Every number in the summary appears in a fact (counts, days, dates, application numbers),
     including numbers written as words, which would otherwise slip past the check.
     """
-    allowed = set(_NUMBER.findall(" ".join(f["text"] for f in facts)))
-    used = set(_NUMBER.findall(summary)) | {_NUMBER_WORDS[w.lower()] for w in _WORD.findall(summary)}
+    def norm(nums):  # "03" in a dd/mm/yyyy date and "3" are the same number
+        return {n.lstrip("0") or "0" for n in nums}
+    allowed = norm(_NUMBER.findall(" ".join(f["text"] for f in facts)))
+    used = norm(set(_NUMBER.findall(summary)) | {_NUMBER_WORDS[w.lower()] for w in _WORD.findall(summary)})
     return used <= allowed
 
 

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api';
-import { PageShell, card, btnPrimary, Notice, useMe } from '@/components/ui';
+import { PageShell, card, btnPrimary, Notice, useMe, formatDate } from '@/components/ui';
 
 interface MemberAvailability {
   user_id: string;
@@ -66,7 +66,7 @@ export default function AvailabilityPage() {
                 <button key={d} aria-pressed={on} onClick={() => { setSaved(false); setDraft({ ...draft, [d]: !on }); }}
                   className={`rounded-lg border px-2 py-2 text-left text-xs focus-visible:outline-2 focus-visible:outline-[#C25E26] ${
                     on ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-[#E8E2D8] bg-white text-stone-500'} ${weekend ? 'opacity-60' : ''}`}>
-                  <span className="block font-semibold">{date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                  <span className="block font-semibold">{formatDate(date, { weekday: true })}</span>
                   <span>{on ? 'Available' : 'Unavailable'}</span>
                 </button>
               );

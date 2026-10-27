@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import AssurancePanel from '@/components/AssurancePanel';
 import CaseAssistantPanel from '@/components/CaseAssistantPanel';
-import { useMe } from '@/components/ui';
+import { useMe, formatDate, formatDateTime } from '@/components/ui';
 import ApplicationFormCard, { typeLabel, type ApplicationForm } from '@/components/ApplicationFormCard';
 
 interface Application {
@@ -61,12 +61,12 @@ const STAGE_ORDER = [
 
 const STAGE_LABELS: Record<string, string> = {
   scrutiny: 'Scrutiny',
-  institution_response: 'Institution Response',
+  institution_response: 'Institution response',
   re_scrutiny: 'Re-scrutiny',
   evc_queue: 'EVC Queue',
   evc_visit: 'EVC Visit',
   sac_shc: 'SAC/SHC',
-  final_decision: 'Final Decision',
+  final_decision: 'Final decision',
 };
 
 function StageStepper({ currentStage, stages }: { currentStage: string; stages: string[] }) {
@@ -207,7 +207,7 @@ function ApplicationDetailContent() {
         <div className="lg:col-span-2 space-y-5">
           {/* Stage Tracker */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs">
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] mb-4 uppercase tracking-wider">Stage Tracker</h2>
+            <h2 className="text-base font-serif font-bold text-[#1C1917] mb-4">Stage tracker</h2>
             <StageStepper currentStage={app.current_stage} stages={approxStages} />
           </div>
 
@@ -215,7 +215,7 @@ function ApplicationDetailContent() {
 
           {/* Actions */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 space-y-3 shadow-2xs">
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider">Actions</h2>
+            <h2 className="text-base font-serif font-bold text-[#1C1917]">Actions</h2>
             {actionError && (
               <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
                 {actionError}
@@ -289,7 +289,7 @@ function ApplicationDetailContent() {
 
           {/* Stage History */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs">
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider mb-4">Stage History</h2>
+            <h2 className="text-base font-serif font-bold text-[#1C1917] mb-4">Stage history</h2>
             <div className="space-y-3">
               {(timeline?.stage_history || []).map((sh, i) => (
                 <div key={sh.id} className="flex gap-3 items-start">
@@ -302,7 +302,7 @@ function ApplicationDetailContent() {
                       <span className="ml-2 text-xs text-stone-400 font-normal capitalize">({sh.action})</span>
                     </div>
                     {sh.reason && <p className="text-xs text-stone-500 mt-0.5 italic">"{sh.reason}"</p>}
-                    <p className="text-xs text-stone-400 mt-0.5">{new Date(sh.entered_at).toLocaleString()}</p>
+                    <p className="text-xs text-stone-400 mt-0.5">{formatDateTime(sh.entered_at)}</p>
                   </div>
                 </div>
               ))}
@@ -317,21 +317,21 @@ function ApplicationDetailContent() {
         <div className="space-y-5">
           {/* Key info */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 space-y-3 shadow-2xs">
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider">Details</h2>
+            <h2 className="text-base font-serif font-bold text-[#1C1917]">Details</h2>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <dt className="text-stone-500">Submitted</dt>
-                <dd className="font-medium text-[#1C1917]">{new Date(app.submitted_at).toLocaleDateString()}</dd>
+                <dd className="font-medium text-[#1C1917]">{formatDate(app.submitted_at)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-stone-500">Stage entered</dt>
-                <dd className="font-medium text-[#1C1917]">{new Date(app.stage_entered_at).toLocaleDateString()}</dd>
+                <dd className="font-medium text-[#1C1917]">{formatDate(app.stage_entered_at)}</dd>
               </div>
               {app.due_at && (
                 <div className="flex justify-between">
                   <dt className="text-stone-500">Due date</dt>
                   <dd className={`font-medium ${new Date(app.due_at) < new Date() ? 'text-red-600' : 'text-[#1C1917]'}`}>
-                    {new Date(app.due_at).toLocaleDateString()}
+                    {formatDate(app.due_at)}
                   </dd>
                 </div>
               )}
@@ -340,12 +340,12 @@ function ApplicationDetailContent() {
 
           {/* Audit Tail */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs">
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider mb-4">Recent Audit Entries</h2>
+            <h2 className="text-base font-serif font-bold text-[#1C1917] mb-4">Recent audit entries</h2>
             <div className="space-y-2">
               {(timeline?.audit_entries || []).slice(-5).reverse().map(e => (
                 <div key={e.seq} className="text-xs p-2.5 rounded-xl bg-[#FAF7F2] border border-[#E8E2D8]">
                   <div className="font-medium text-[#1C1917]">{e.action}</div>
-                  <div className="text-stone-500 mt-0.5">{e.actor_role} · {new Date(e.created_at).toLocaleString()}</div>
+                  <div className="text-stone-500 mt-0.5">{e.actor_role} · {formatDateTime(e.created_at)}</div>
                 </div>
               ))}
               {!timeline?.audit_entries?.length && (

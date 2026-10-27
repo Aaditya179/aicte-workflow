@@ -7,6 +7,7 @@ import {
   FileCheck2, AlertTriangle, Clock, CheckCircle2, RotateCw, 
   FileText, Shield, Plus, X, Calendar 
 } from 'lucide-react';
+import { formatDate } from '@/components/ui';
 
 interface DocumentRecord {
   id: string;
@@ -264,7 +265,7 @@ function DocumentsContent() {
                   <th className="py-3 px-4">Title & URI</th>
                   <th className="py-3 px-4">Type</th>
                   <th className="py-3 px-4">Institution</th>
-                  <th className="py-3 px-4">Validity Range</th>
+                  <th className="py-3 px-4">Valid</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -290,9 +291,9 @@ function DocumentsContent() {
                     <td className="py-3.5 px-4 text-xs font-mono">
                       {d.valid_until ? (
                         <span>
-                          {d.valid_from ? `${new Date(d.valid_from).toLocaleDateString()} → ` : ''}
+                          {d.valid_from ? `${formatDate(d.valid_from)} → ` : ''}
                           <span className="font-semibold text-[#1C1917]">
-                            {new Date(d.valid_until).toLocaleDateString()}
+                            {formatDate(d.valid_until)}
                           </span>
                         </span>
                       ) : (
@@ -353,10 +354,10 @@ function DocumentsContent() {
                   className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 >
                   <option value="lease">Land Lease / Ownership Deed</option>
-                  <option value="undertaking_evidence">Undertaking Compliance Evidence</option>
-                  <option value="application_form">Official Application Dossier</option>
+                  <option value="undertaking_evidence">Undertaking evidence</option>
+                  <option value="application_form">Application form</option>
                   <option value="evc_report">EVC Inspection Report</option>
-                  <option value="other">Other Statutory Affidavit</option>
+                  <option value="other">Other affidavit</option>
                 </select>
               </div>
               <div>
@@ -422,7 +423,7 @@ function DocumentsContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Registering...' : 'Register Document'}
+                  {submitting ? 'Registering...' : 'Register document'}
                 </button>
               </div>
             </form>
@@ -509,7 +510,7 @@ function DocumentsContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Uploading...' : 'Submit Renewal'}
+                  {submitting ? 'Uploading...' : 'Submit renewal'}
                 </button>
               </div>
             </form>

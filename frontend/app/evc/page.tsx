@@ -7,6 +7,7 @@ import {
   Calendar, CheckCircle2, Clock, AlertTriangle, Users, 
   FileText, Plus, Shield, ArrowRight, X 
 } from 'lucide-react';
+import { formatDate } from '@/components/ui';
 
 interface EVCVisit {
   id: string;
@@ -228,9 +229,9 @@ function EVCContent() {
                   <th className="py-3 px-4">Application</th>
                   <th className="py-3 px-4">Institution</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Scheduling Due</th>
-                  <th className="py-3 px-4">Visit Date</th>
-                  <th className="py-3 px-4">Completion Due</th>
+                  <th className="py-3 px-4">Schedule by</th>
+                  <th className="py-3 px-4">Visit date</th>
+                  <th className="py-3 px-4">Report due</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -250,13 +251,13 @@ function EVCContent() {
                     </td>
                     <td className="py-3.5 px-4">{getStatusBadge(v.status)}</td>
                     <td className="py-3.5 px-4 text-xs font-mono text-stone-600">
-                      {new Date(v.scheduling_due_at).toLocaleDateString()}
+                      {formatDate(v.scheduling_due_at)}
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-stone-600">
-                      {v.scheduled_for ? new Date(v.scheduled_for).toLocaleDateString() : '—'}
+                      {v.scheduled_for ? formatDate(v.scheduled_for) : '—'}
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-stone-600">
-                      {v.completion_due_at ? new Date(v.completion_due_at).toLocaleDateString() : '—'}
+                      {v.completion_due_at ? formatDate(v.completion_due_at) : '—'}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-2">
                       {(v.status === 'queued' || v.status === 'overdue') && canManage && (
@@ -351,7 +352,7 @@ function EVCContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Scheduling...' : 'Confirm Schedule'}
+                  {submitting ? 'Scheduling...' : 'Confirm schedule'}
                 </button>
               </div>
             </form>
@@ -422,7 +423,7 @@ function EVCContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Uploading...' : 'Save Report'}
+                  {submitting ? 'Uploading...' : 'Save report'}
                 </button>
               </div>
             </form>
@@ -472,7 +473,7 @@ function EVCContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Completing...' : 'Confirm Closure'}
+                  {submitting ? 'Completing...' : 'Confirm closure'}
                 </button>
               </div>
             </form>

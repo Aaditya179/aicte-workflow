@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { API_BASE_URL, fetchApi } from '@/lib/api';
+import ServerWakeNote from '@/components/ServerWakeNote';
 import {
   Building2,
   ShieldCheck,
@@ -42,7 +43,7 @@ const DEMO_ROLES: DemoRole[] = [
   },
   {
     role: 'scrutiny_officer',
-    roleLabel: 'Scrutiny Officer',
+    roleLabel: 'Scrutiny officer',
     title: 'Western Scrutiny Officer',
     email: 'scrutiny@demo.sih',
     description: 'Examine institutional submissions, verify documentation, and note deficiencies.',
@@ -51,7 +52,7 @@ const DEMO_ROLES: DemoRole[] = [
   },
   {
     role: 'regional_officer',
-    roleLabel: 'Regional Officer',
+    roleLabel: 'Regional officer',
     title: 'Western Regional Officer',
     email: 'regional@demo.sih',
     description: 'Monitor pendency across Western region, balance cases, and schedule EVCs.',
@@ -69,7 +70,7 @@ const DEMO_ROLES: DemoRole[] = [
   },
   {
     role: 'bureau_officer',
-    roleLabel: 'Bureau Officer',
+    roleLabel: 'Bureau officer',
     title: 'AICTE Bureau Officer',
     email: 'bureau@demo.sih',
     description: 'National overview, review SAC/SHC escalations, and issue final approvals.',
@@ -79,7 +80,7 @@ const DEMO_ROLES: DemoRole[] = [
   {
     role: 'admin',
     roleLabel: 'Administrator',
-    title: 'System Administrator',
+    title: 'Administrator',
     email: 'admin@demo.sih',
     description: 'Run the demo clock, propose SLA and rule changes, and manage users. No access to case data.',
     icon: Settings,
@@ -87,8 +88,8 @@ const DEMO_ROLES: DemoRole[] = [
   },
   {
     role: 'admin2',
-    roleLabel: 'Second Administrator',
-    title: 'Second Administrator',
+    roleLabel: 'Second administrator',
+    title: 'Second administrator',
     email: 'admin2@demo.sih',
     description: 'Approves rule and timeline changes proposed by the first administrator.',
     icon: Settings,
@@ -115,7 +116,7 @@ const DEMO_ROLES: DemoRole[] = [
   {
     role: 'auditor',
     roleLabel: 'Auditor',
-    title: 'Internal Auditor',
+    title: 'Auditor',
     email: 'auditor@demo.sih',
     description: 'Read-only audit trail, document access logs and reports.',
     icon: Eye,
@@ -218,10 +219,11 @@ export default function LoginPage() {
           {/* Left Column: Direct Login Form */}
           <div className="lg:col-span-5 bg-white rounded-2xl p-6 sm:p-8 shadow-xs border border-[#E8E2D8]">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold font-serif text-[#1C1917]">Sign In</h2>
+              <h2 className="text-2xl font-bold font-serif text-[#1C1917]">Sign in</h2>
               <p className="text-sm text-stone-500 mt-1">
                 Enter your official AICTE credentials or click any demo role on the right.
               </p>
+              <ServerWakeNote className="mt-3" />
             </div>
 
             {errorMessage && (
@@ -291,7 +293,7 @@ export default function LoginPage() {
                   </>
                 ) : (
                   <>
-                    <span>Enter Portal</span>
+                    <span>Sign in</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -368,7 +370,7 @@ export default function LoginPage() {
       {/* Advisory Footer */}
       <footer className="max-w-6xl mx-auto w-full pt-6 pb-2 border-t border-[#E8E2D8] text-center">
         <p className="text-xs text-stone-500">
-          Advisory only, final decisions rest with the competent authority. • AICTE Automated Workflow Engine
+          Advisory only, final decisions rest with the competent authority.
         </p>
       </footer>
     </div>

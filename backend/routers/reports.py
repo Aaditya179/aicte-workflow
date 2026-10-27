@@ -149,7 +149,7 @@ async def get_report(
     - audit: Cryptographically verified audit log
     """
     now = clock.now()
-    generated_at = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+    generated_at = clock.display_date(now, with_time=True)
     if report_type == "audit" and user.role not in ("bureau_officer", "auditor"):
         raise HTTPException(status_code=403, detail="The audit trail report is for bureau officers and auditors")
     # Regional staff report on their own region only
@@ -244,7 +244,7 @@ async def get_report(
                 r.get("action"),
                 r.get("entity_type"),
                 r.get("actor_role"),
-                str(r.get("created_at"))[:19],
+                clock.display_date(r.get("created_at"), with_time=True),
                 str(r.get("hash"))[:16] + "..."
             ]
             for r in rows

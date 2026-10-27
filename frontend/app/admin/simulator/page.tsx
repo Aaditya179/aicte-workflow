@@ -7,6 +7,7 @@ import {
   FastForward, RotateCcw, Play, Clock, ShieldAlert,
   AlertTriangle, CheckCircle2, ChevronRight, Loader2, ArrowRight
 } from 'lucide-react';
+import { formatDate, formatDateTime, formatTime } from '@/components/ui';
 
 interface ClockStatus {
   clock_now: string;
@@ -162,9 +163,9 @@ function SimulatorContent() {
       {/* Clock Status Banner */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="p-5 rounded-2xl border border-[#E8E2D8] bg-white shadow-2xs">
-          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Simulated Time</span>
+          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Simulated time</span>
           <div className="text-xl font-mono font-bold text-stone-900 mt-2">
-            {clockStatus ? new Date(clockStatus.clock_now).toLocaleString() : 'Loading...'}
+            {clockStatus ? formatDateTime(clockStatus.clock_now) : 'Loading...'}
           </div>
           <div className="mt-2.5 flex items-center gap-1.5 text-xs">
             {clockStatus?.is_simulated ? (
@@ -180,9 +181,9 @@ function SimulatorContent() {
         </div>
 
         <div className="p-5 rounded-2xl border border-[#E8E2D8] bg-white shadow-2xs">
-          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Real System Clock</span>
+          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Real clock</span>
           <div className="text-xl font-mono font-bold text-stone-700 mt-2">
-            {clockStatus ? new Date(clockStatus.actual_utc).toLocaleString() : 'Loading...'}
+            {clockStatus ? formatDateTime(clockStatus.actual_utc) : 'Loading...'}
           </div>
           <div className="mt-2.5 text-xs text-stone-500">
             Postgres <code className="text-[#C25E26] bg-[#FBF0E4] px-1 py-0.5 rounded">app_now()</code> evaluates against simulated offset.
@@ -191,19 +192,19 @@ function SimulatorContent() {
 
         <div className="p-5 rounded-2xl border border-[#E8E2D8] bg-[#FAF7F2] shadow-2xs flex flex-col justify-between">
           <div>
-            <span className="text-xs font-semibold text-[#C25E26] uppercase tracking-wider">Last Scheduler Execution</span>
+            <span className="text-xs font-semibold text-[#C25E26] uppercase tracking-wider">Last scheduler run</span>
             <div className="text-xs text-stone-700 mt-2 space-y-0.5">
               {lastRunResult ? (
                 <div>
                   <p><strong>Alerts Created:</strong> {lastRunResult.alerts_created}</p>
                   <p><strong>Escalations:</strong> {lastRunResult.escalations_created}</p>
-                  <p className="text-[10px] text-stone-500 mt-1">Finished: {new Date(lastRunResult.finished_at).toLocaleTimeString()}</p>
+                  <p className="text-[10px] text-stone-500 mt-1">Finished: {formatTime(lastRunResult.finished_at)}</p>
                 </div>
               ) : schedulerRuns.length > 0 ? (
                 <div>
                   <p><strong>Alerts Created:</strong> {schedulerRuns[0].alerts_created}</p>
                   <p><strong>Escalations:</strong> {schedulerRuns[0].escalations_created}</p>
-                  <p className="text-[10px] text-stone-500 mt-1">Last run: {new Date(schedulerRuns[0].finished_at).toLocaleTimeString()}</p>
+                  <p className="text-[10px] text-stone-500 mt-1">Last run: {formatTime(schedulerRuns[0].finished_at)}</p>
                 </div>
               ) : (
                 <p className="text-stone-500">No runs recorded yet.</p>
@@ -215,7 +216,7 @@ function SimulatorContent() {
 
       {/* Time-Jump Controls Panel */}
       <div className="bg-white rounded-2xl border border-[#E8E2D8] p-6 mb-8 shadow-2xs">
-        <h2 className="text-lg font-serif font-bold text-stone-900 mb-1">Advance Clock</h2>
+        <h2 className="text-lg font-serif font-bold text-stone-900 mb-1">Advance clock</h2>
         <p className="text-xs text-stone-600 mb-5">
           Select a predefined jump to trigger the spec scenarios, or enter custom days.
         </p>
@@ -306,7 +307,7 @@ function SimulatorContent() {
               </span>
             </div>
             <p className="text-xs text-stone-500 mt-1">
-              Spec §9 scripted case in Scrutiny stage. Watch alerts dynamically trigger as you jump the clock!
+              The demo case in Scrutiny, due in 2 days. Move the clock forward and watch its reminders, overdue alert and escalations fire.
             </p>
           </div>
 
@@ -330,13 +331,13 @@ function SimulatorContent() {
               <div>
                 <span className="text-stone-500">Stage Entered:</span>
                 <p className="font-semibold text-stone-900 mt-0.5">
-                  {new Date(caseB.stage_entered_at).toLocaleDateString()}
+                  {formatDate(caseB.stage_entered_at)}
                 </p>
               </div>
               <div>
                 <span className="text-stone-500">Due Date:</span>
                 <p className="font-semibold text-stone-900 mt-0.5">
-                  {new Date(caseB.due_at).toLocaleDateString()}
+                  {formatDate(caseB.due_at)}
                 </p>
               </div>
               <div>
@@ -358,8 +359,8 @@ function SimulatorContent() {
             </div>
 
             {/* Fired Alerts for Case B */}
-            <h3 className="text-xs font-semibold text-stone-700 uppercase tracking-wider mb-2">
-              Fired Alerts for Case B ({caseBAlerts.length})
+            <h3 className="text-xs font-semibold text-stone-700 mb-2">
+              Alerts raised for Case B ({caseBAlerts.length})
             </h3>
             {caseBAlerts.length === 0 ? (
               <p className="text-xs text-stone-400 italic">No alerts fired yet for Case B. Run scheduler or jump clock.</p>
@@ -390,7 +391,7 @@ function SimulatorContent() {
                       )}
                     </div>
                     <span className="text-[10px] text-stone-400">
-                      {new Date(a.fired_at).toLocaleTimeString()}
+                      {formatTime(a.fired_at)}
                     </span>
                   </div>
                 ))}
@@ -406,15 +407,15 @@ function SimulatorContent() {
 
       {/* Recent Scheduler Runs Table */}
       <div className="bg-white rounded-2xl border border-[#E8E2D8] p-6 shadow-2xs">
-        <h2 className="text-lg font-serif font-bold text-stone-900 mb-4">Recent Scheduler Runs</h2>
+        <h2 className="text-lg font-serif font-bold text-stone-900 mb-4">Recent scheduler runs</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[#E8E2D8] text-stone-500 uppercase text-[11px]">
                 <th className="pb-3 font-semibold">Run ID</th>
-                <th className="pb-3 font-semibold">Started At</th>
-                <th className="pb-3 font-semibold">Clock Time During Run</th>
-                <th className="pb-3 font-semibold">Alerts Created</th>
+                <th className="pb-3 font-semibold">Started</th>
+                <th className="pb-3 font-semibold">Simulated time</th>
+                <th className="pb-3 font-semibold">Alerts created</th>
                 <th className="pb-3 font-semibold">Escalations</th>
                 <th className="pb-3 font-semibold">Status</th>
               </tr>
@@ -423,8 +424,8 @@ function SimulatorContent() {
               {schedulerRuns.map((r) => (
                 <tr key={r.id} className="hover:bg-[#FAF7F2] transition">
                   <td className="py-2.5 font-mono text-[11px] text-stone-500">{r.id.slice(0, 8)}...</td>
-                  <td className="py-2.5 text-stone-700">{new Date(r.started_at).toLocaleString()}</td>
-                  <td className="py-2.5 text-stone-600">{new Date(r.clock_now).toLocaleString()}</td>
+                  <td className="py-2.5 text-stone-700">{formatDateTime(r.started_at)}</td>
+                  <td className="py-2.5 text-stone-600">{formatDateTime(r.clock_now)}</td>
                   <td className="py-2.5 font-semibold text-stone-900">{r.alerts_created}</td>
                   <td className="py-2.5 font-semibold text-red-600">{r.escalations_created}</td>
                   <td className="py-2.5">

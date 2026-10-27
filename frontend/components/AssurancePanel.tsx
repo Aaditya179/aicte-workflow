@@ -182,11 +182,11 @@ export default function AssurancePanel({
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider flex items-center gap-2">
-              Decision Assurance & Evidence Integrity
+            <h2 className="text-base font-serif font-bold text-[#1C1917] flex items-center gap-2">
+              Decision Assurance
             </h2>
             <p className="text-xs text-stone-500">
-              Statutory verification of freshness, completeness, consistency & source provenance (§15.2)
+              Checks that the documents behind this decision are current, complete, consistent and unaltered
             </p>
           </div>
         </div>
@@ -261,7 +261,7 @@ export default function AssurancePanel({
         <div className="pt-2 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
-              <span className="text-[11px] font-semibold text-emerald-800">Checks Passed</span>
+              <span className="text-[11px] font-semibold text-emerald-800">Checks passed</span>
               <p className="text-xl font-serif font-bold text-emerald-700 mt-0.5">{report.passed}</p>
             </div>
 
@@ -285,8 +285,8 @@ export default function AssurancePanel({
           {/* Active Flags List */}
           {flags.length > 0 && (
             <div className="space-y-2 pt-1">
-              <h4 className="text-xs font-serif font-bold text-[#1C1917] uppercase tracking-wider">
-                Assurance Findings ({flags.length})
+              <h4 className="text-xs font-serif font-bold text-[#1C1917]">
+                Findings ({flags.length})
               </h4>
               {flags.map((flag) => {
                 const isOverridden = flag.status === 'overridden';

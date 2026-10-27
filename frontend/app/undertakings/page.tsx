@@ -6,6 +6,7 @@ import {
   FileCheck, AlertCircle, Clock, CheckCircle2, XCircle, 
   Upload, Shield, Plus, X 
 } from 'lucide-react';
+import { formatDate } from '@/components/ui';
 
 interface Undertaking {
   id: string;
@@ -315,7 +316,7 @@ function UndertakingsContent() {
                     </td>
                     <td className="py-3.5 px-4">{getStatusBadge(u.status)}</td>
                     <td className="py-3.5 px-4 text-xs font-mono text-stone-600">
-                      {new Date(u.due_at).toLocaleDateString()}
+                      {formatDate(u.due_at)}
                     </td>
                     <td className="py-3.5 px-4 text-xs">
                       {u.documents ? (
@@ -470,7 +471,7 @@ function UndertakingsContent() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-medium rounded-full bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
-                  {submitting ? 'Verifying...' : 'Clear Condition'}
+                  {submitting ? 'Verifying...' : 'Clear condition'}
                 </button>
               </div>
             </form>

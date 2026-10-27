@@ -88,5 +88,5 @@ def test_dates_typed_by_hand_and_impossible_ranges():
                 "ocr_suggested_expiry": "2028-03-31"}
     flags, _ = _consistency_flags([edited, backwards, rejected], INST)
     assert [f["entity_id"] for f in flags] == ["d1", "d2"]
-    assert "entered by hand as 2030-03-31, but the document reads 2028-03-31" in flags[0]["message"]
+    assert "entered by hand as 31/03/2030, but the document reads 31/03/2028" in flags[0]["message"]
     assert "after its expiry" in flags[1]["message"]

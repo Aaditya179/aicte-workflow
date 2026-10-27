@@ -178,24 +178,27 @@ async def get_regional_dashboard(
                 "oldest_case": c_data[0] if c_data else None
             })
 
-        # Generate balancing suggestion if >= 2 officers
+        # Suggest a move only between officers of the same role, who can work the same stages
         workload_suggestion = None
-        if len(officer_stats) >= 2:
-            officer_stats.sort(key=lambda o: o["open_count"], reverse=True)
-            most_loaded = officer_stats[0]
-            least_loaded = officer_stats[-1]
-            diff = most_loaded["open_count"] - least_loaded["open_count"]
-            if diff >= 2 and most_loaded["oldest_case"]:
-                workload_suggestion = {
-                    "from_officer": most_loaded["name"],
-                    "from_officer_id": most_loaded["user_id"],
-                    "to_officer": least_loaded["name"],
-                    "to_officer_id": least_loaded["user_id"],
-                    "case_id": most_loaded["oldest_case"]["id"],
-                    "case_number": most_loaded["oldest_case"]["application_no"],
-                    "reason": f"High load disparity ({most_loaded['open_count']} vs {least_loaded['open_count']} open cases). Suggest reassigning oldest unstarted case.",
-                    "advisory": "Advisory only, final decisions rest with the competent authority."
-                }
+        best = None
+        for role in {o["role"] for o in officer_stats}:
+            same = sorted((o for o in officer_stats if o["role"] == role), key=lambda o: o["open_count"], reverse=True)
+            if len(same) >= 2 and same[0]["oldest_case"] and same[0]["open_count"] - same[-1]["open_count"] >= 2:
+                if not best or same[0]["open_count"] - same[-1]["open_count"] > best[0]["open_count"] - best[1]["open_count"]:
+                    best = (same[0], same[-1])
+        if best:
+            most_loaded, least_loaded = best
+            workload_suggestion = {
+                "from_officer": most_loaded["name"],
+                "from_officer_id": most_loaded["user_id"],
+                "to_officer": least_loaded["name"],
+                "to_officer_id": least_loaded["user_id"],
+                "case_id": most_loaded["oldest_case"]["id"],
+                "case_number": most_loaded["oldest_case"]["application_no"],
+                "reason": f"{most_loaded['open_count']} open cases against {least_loaded['open_count']}; "
+                          f"the oldest case could move.",
+                "advisory": "Advisory only, final decisions rest with the competent authority."
+            }
 
         base_data["workload_balancer"] = {
             "officers": officer_stats,

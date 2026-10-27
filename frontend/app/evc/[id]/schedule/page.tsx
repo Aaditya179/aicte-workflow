@@ -92,7 +92,7 @@ function ScheduleVisitContent() {
                       <span className="text-xs font-semibold text-stone-500">Option {i + 1}</span>
                       {!s.before_due && <Badge tone="amber">After deadline</Badge>}
                     </div>
-                    <p className="mt-1 text-lg font-bold text-stone-900">{new Date(`${s.date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+                    <p className="mt-1 text-lg font-bold text-stone-900">{formatDate(s.date, { weekday: true })}</p>
                     <ul className="mt-3 space-y-1 text-sm">
                       {s.members.map((m) => (
                         <li key={m.user_id} className="flex items-center justify-between gap-2">

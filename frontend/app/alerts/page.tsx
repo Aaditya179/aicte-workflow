@@ -8,6 +8,7 @@ import {
   AlertTriangle, ShieldAlert, Clock, CheckCircle2,
   Filter, Search, RefreshCw, Check, Loader2, ArrowRight
 } from 'lucide-react';
+import { formatDateTime } from '@/components/ui';
 
 interface AlertItem {
   id: string;
@@ -106,9 +107,9 @@ export default function AlertsInboxPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-serif font-bold tracking-tight text-[#1C1917]">Alerts Inbox</h1>
+          <h1 className="text-2xl font-serif font-bold tracking-tight text-[#1C1917]">Alerts</h1>
           <p className="text-sm text-stone-500 mt-0.5">
-            Real-time SLA breaches, escalation notices, and compliance deadlines
+            Missed deadlines, escalations and upcoming due dates, as they happen
           </p>
         </div>
         <button
@@ -130,7 +131,7 @@ export default function AlertsInboxPage() {
               : 'border-[#E8E2D8] bg-white'
           }`}
         >
-          <div className="text-xs text-stone-500 font-medium">Open Alerts</div>
+          <div className="text-xs text-stone-500 font-medium">Open alerts</div>
           <div className="text-2xl font-serif font-bold text-[#1C1917] mt-1">{counts.total_open}</div>
         </button>
 
@@ -206,7 +207,7 @@ export default function AlertsInboxPage() {
             onChange={(e) => setSeverityFilter(e.target.value)}
             className="px-3 py-1.5 rounded-full border border-[#E8E2D8] text-xs bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
           >
-            <option value="all">All Severities</option>
+            <option value="all">All severities</option>
             <option value="critical">Critical</option>
             <option value="warning">Warning</option>
             <option value="info">Info</option>
@@ -218,7 +219,7 @@ export default function AlertsInboxPage() {
             onChange={(e) => setKindFilter(e.target.value)}
             className="px-3 py-1.5 rounded-full border border-[#E8E2D8] text-xs bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
           >
-            <option value="all">All Types</option>
+            <option value="all">All types</option>
             <option value="upcoming">Upcoming</option>
             <option value="overdue">Overdue</option>
             <option value="escalation">Escalation</option>
@@ -308,7 +309,7 @@ export default function AlertsInboxPage() {
                     </p>
 
                     <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-stone-500">
-                      <span>Fired: {new Date(a.fired_at).toLocaleString()}</span>
+                      <span>Fired: {formatDateTime(a.fired_at)}</span>
                       {a.target_role && (
                         <span>Target: <strong className="text-stone-800 capitalize">{a.target_role.replace('_', ' ')}</strong></span>
                       )}
@@ -363,7 +364,7 @@ export default function AlertsInboxPage() {
       {ackModalAlert && (
         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-[#E8E2D8] shadow-xl max-w-md w-full p-6 text-[#1C1917]">
-            <h3 className="text-base font-serif font-bold text-[#1C1917]">Acknowledge Alert</h3>
+            <h3 className="text-base font-serif font-bold text-[#1C1917]">Acknowledge alert</h3>
             <p className="text-xs text-stone-500 mt-1">
               Acknowledging records your identity in the cryptographically chained audit log.
             </p>

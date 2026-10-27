@@ -116,7 +116,7 @@ async def create_undertaking(
         notifier.notify_users(
             user_ids=target_uids,
             title="New Compliance Undertaking Assigned",
-            body=f"Undertaking '{req.title}' due by {due_at.date()}. Please upload compliance evidence."
+            body=f"Undertaking '{req.title}' due by {clock.display_date(due_at)}. Please upload compliance evidence."
         )
 
     return created

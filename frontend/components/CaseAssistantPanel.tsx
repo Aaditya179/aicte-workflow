@@ -71,7 +71,7 @@ export default function CaseAssistantPanel({ applicationId, role }: { applicatio
   return (
     <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 space-y-4 shadow-2xs">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider flex items-center gap-2">
+        <h2 className="text-base font-serif font-bold text-[#1C1917] flex items-center gap-2">
           <FileText className="w-4 h-4 text-[#C25E26]" /> Case summary and AI assistant
         </h2>
         <span className="text-[10px] font-semibold text-[#C25E26] bg-[#FBF0E4] border border-[#F0D5BE] px-2.5 py-0.5 rounded-full">

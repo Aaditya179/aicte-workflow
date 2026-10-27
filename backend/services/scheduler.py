@@ -328,7 +328,7 @@ def fire_alert(
                 channels=channels,
                 kind=kind,
                 reference_no=_reference_no(entity_type, entity_row),
-                due_date=due.date().isoformat() if due else None,
+                due_date=clock.display_date(due) if due else None,
                 wait=False,  # email/SMS/WhatsApp go out in the background; the run is not held up
             )
 

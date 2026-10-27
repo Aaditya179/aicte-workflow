@@ -211,7 +211,7 @@ async def suggest_dates(
         if busy:
             reasons.append(f"{', '.join(busy)} already has more than {BUSY_MONTH_VISITS} visits this month")
         if d > due:
-            reasons.append(f"after the scheduling deadline of {due.isoformat()}")
+            reasons.append(f"after the scheduling deadline of {clock.display_date(due)}")
         travel = "No travel needed, all members are local" if not travellers else "Travel: " + "; ".join(travellers)
         candidates.append({
             "date": iso,
@@ -278,7 +278,7 @@ async def schedule_evc_visit(
             busy = sorted({m for o in clashes for m in (o.get("committee_members") or []) if m in req.committee_members})
             raise HTTPException(
                 status_code=409,
-                detail=f"{len(busy)} committee member(s) already have a visit on {scheduled_dt.date()}: {', '.join(busy)}"
+                detail=f"{len(busy)} committee member(s) already have a visit on {clock.display_date(scheduled_dt.date())}: {', '.join(busy)}"
             )
 
     # Completion deadline from the evc_completion SLA rule (region-specific first)
@@ -314,7 +314,7 @@ async def schedule_evc_visit(
         entity_id=evc_id,
         before=evc,
         after=updated,
-        reason=f"Scheduled for {scheduled_dt.date()} with {len(req.committee_members)} committee members"
+        reason=f"Scheduled for {clock.display_date(scheduled_dt.date())} with {len(req.committee_members)} committee members"
     )
 
     # Notify committee members
@@ -323,7 +323,7 @@ async def schedule_evc_visit(
         notifier.notify_users(
             user_ids=req.committee_members,
             title="Assigned to EVC Inspection Committee",
-            body=f"You have been assigned to the expert visit committee for {app_no} on {scheduled_dt.date()}."
+            body=f"You have been assigned to the expert visit committee for {app_no} on {clock.display_date(scheduled_dt.date())}."
         )
 
     return updated

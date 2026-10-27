@@ -19,11 +19,11 @@ interface ReportJSONResponse {
 }
 
 const REPORT_TABS = [
-  { id: 'pendency', name: 'Stage & Region Pendency', desc: 'Case distribution and stage bottleneck aging' },
-  { id: 'overdue_summary', name: 'Regional Overdue Matrix', desc: 'Overdue applications, EVCs, undertakings, and expired documents' },
-  { id: 'officer_workload', name: 'Officer Workload & SLAs', desc: 'Active workload, overdue counts, and average clearance times' },
-  { id: 'compliance', name: 'Institutional Compliance', desc: 'Health score ratings, pending undertakings, and document validity' },
-  { id: 'audit', name: 'Cryptographic Audit Trail', desc: 'Chained SHA-256 integrity logs and immutable sequence verification' },
+  { id: 'pendency', name: 'Pendency by stage and region', desc: 'Open cases at each stage, and how long they have waited' },
+  { id: 'overdue_summary', name: 'Late items by region', desc: 'Overdue cases, EVC visits and undertakings, and expired documents' },
+  { id: 'officer_workload', name: 'Officer workload', desc: 'Open and overdue cases per officer, and average case age' },
+  { id: 'compliance', name: 'Institution compliance', desc: 'Health scores, pending undertakings and document validity' },
+  { id: 'audit', name: 'Audit trail', desc: 'Recent audit entries, with the result of the integrity check' },
 ];
 
 function ReportsContent() {
@@ -94,10 +94,10 @@ function ReportsContent() {
         <div>
           <h1 className="text-2xl font-serif font-bold tracking-tight text-[#1C1917] flex items-center gap-2">
             <BarChart3 className="w-6 h-6 text-[#C25E26]" />
-            Statutory Reports & Governance Intelligence
+            Reports
           </h1>
           <p className="text-sm text-stone-500">
-            Generate and export official AICTE pendency, SLA breach, officer workload, and cryptographically verified audit reports.
+            View pendency, late items, workload, compliance and audit reports, and download them as PDF or Excel.
           </p>
         </div>
 
@@ -161,7 +161,7 @@ function ReportsContent() {
               {reportData?.title || 'Report Table Preview'}
             </h2>
             <p className="text-xs text-stone-500">
-              Evaluated against simulated time: {reportData?.simulated_time || 'Current Time'} · Total Records: {reportData?.total_records || 0}
+              Evaluated against simulated time: {reportData?.simulated_time || 'Current time'} · Total Records: {reportData?.total_records || 0}
             </p>
           </div>
           <span className="text-xs px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#E8E2D8] text-stone-600 font-mono">
@@ -172,7 +172,7 @@ function ReportsContent() {
         {loading ? (
           <div className="py-16 text-center text-stone-400">
             <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#C25E26]" />
-            Loading report data from PostgreSQL views...
+            Loading the report…
           </div>
         ) : !reportData || reportData.data.length === 0 ? (
           <div className="py-16 text-center text-stone-400 text-sm">

@@ -6,10 +6,13 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchApi } from '@/lib/api';
 import { typeLabel } from '@/components/ApplicationFormCard';
+import NaturalLanguageSearch from '@/components/NaturalLanguageSearch';
+import { useMe } from '@/components/ui';
 import {
   FileText, Clock, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
   ChevronRight, Filter, Search, PlusCircle, Loader2, ArrowRight
 } from 'lucide-react';
+import { formatDate } from '@/components/ui';
 
 interface Application {
   id: string;
@@ -29,7 +32,7 @@ interface Application {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  in_progress: { label: 'In Progress', color: 'text-blue-600 bg-blue-50 border-blue-200', icon: Clock },
+  in_progress: { label: 'In progress', color: 'text-blue-600 bg-blue-50 border-blue-200', icon: Clock },
   returned:    { label: 'Returned',    color: 'text-amber-600 bg-amber-50 border-amber-200', icon: AlertTriangle },
   approved:    { label: 'Approved',    color: 'text-emerald-600 bg-emerald-50 border-emerald-200', icon: CheckCircle2 },
   rejected:    { label: 'Rejected',    color: 'text-red-600 bg-red-50 border-red-200', icon: XCircle },
@@ -44,7 +47,7 @@ const STAGE_LABELS: Record<string, string> = {
   evc_queue: 'EVC Queue',
   evc_visit: 'EVC Visit',
   sac_shc: 'SAC/SHC',
-  final_decision: 'Final Decision',
+  final_decision: 'Final decision',
 };
 
 function daysSince(date: string): number {
@@ -56,8 +59,11 @@ function isOverdue(dueAt: string | null): boolean {
   return new Date(dueAt) < new Date();
 }
 
+const NL_ROLES = ['bureau_officer', 'regional_officer', 'scrutiny_officer'];
+
 export default function ApplicationsPage() {
   const router = useRouter();
+  const { me } = useMe();
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -100,36 +106,8 @@ export default function ApplicationsPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
-        {/* Natural Language Query Bar (§10.4) */}
-        <div className="bg-white p-5 rounded-2xl border border-[#E8E2D8] shadow-2xs space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#C25E26] uppercase tracking-wider flex items-center gap-1.5">
-              ✨ Natural-Language Query
-            </span>
-            <span className="text-[10px] bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] px-2.5 py-0.5 rounded-full font-semibold">
-              AI Powered · Safe Schema
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g. 'Show me overdue scrutiny applications in western region' or 'delayed EVC visits'"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') load(); }}
-              className="flex-1 px-4 py-2 text-sm border border-[#E8E2D8] rounded-full bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26] shadow-2xs"
-            />
-            <button
-              onClick={load}
-              className="px-5 py-2 bg-[#C25E26] hover:bg-[#A84A19] text-white rounded-full text-sm font-medium transition shadow-2xs cursor-pointer"
-            >
-              Search
-            </button>
-          </div>
-          <p className="text-[11px] text-stone-500">
-            Advisory only, final decisions rest with the competent authority. Queries execute through allow-listed schema filters.
-          </p>
-        </div>
+        {/* Natural-language search: the AI turns the question into a checked filter (§10.4) */}
+        {me && NL_ROLES.includes(me.role) && <NaturalLanguageSearch />}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
@@ -148,8 +126,8 @@ export default function ApplicationsPage() {
             onChange={e => setStatusFilter(e.target.value)}
             className="py-2 px-3 text-sm border border-[#E8E2D8] rounded-full bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
           >
-            <option value="">All Statuses</option>
-            <option value="in_progress">In Progress</option>
+            <option value="">All statuses</option>
+            <option value="in_progress">In progress</option>
             <option value="returned">Returned</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
@@ -159,7 +137,7 @@ export default function ApplicationsPage() {
             onChange={e => setStageFilter(e.target.value)}
             className="py-2 px-3 text-sm border border-[#E8E2D8] rounded-full bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
           >
-            <option value="">All Stages</option>
+            <option value="">All stages</option>
             {Object.entries(STAGE_LABELS).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
@@ -177,9 +155,9 @@ export default function ApplicationsPage() {
                 <tr className="border-b border-[#E8E2D8] bg-[#FAF7F2]">
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">App No.</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Current Stage</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Stage</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Due At</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Due</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-stone-600">Age (Days)</th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -230,7 +208,7 @@ export default function ApplicationsPage() {
                       <td className="px-4 py-3.5">
                         {app.due_at ? (
                           <span className={`text-xs font-medium ${overdue ? 'text-red-600' : 'text-stone-600'}`}>
-                            {overdue ? '⚠ ' : ''}{new Date(app.due_at).toLocaleDateString()}
+                            {overdue ? '⚠ ' : ''}{formatDate(app.due_at)}
                           </span>
                         ) : <span className="text-stone-300">—</span>}
                       </td>

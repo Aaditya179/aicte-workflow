@@ -6,6 +6,7 @@ import { Bell, Check, Clock, ExternalLink } from 'lucide-react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { fetchApi } from '@/lib/api';
+import { formatTime } from '@/components/ui';
 
 /** Fired on window when a realtime notification arrives, so open pages can refresh. */
 export const NEW_NOTIFICATION_EVENT = 'nirikshan:notification';
@@ -158,7 +159,7 @@ export default function AlertBell() {
                     <p className="font-bold text-[#1C1917] truncate">{n.title}</p>
                     {n.body && <p className="text-stone-600 mt-0.5 line-clamp-2">{n.body}</p>}
                     <span className="text-[10px] text-stone-400 mt-1 block">
-                      {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatTime(n.created_at)}
                     </span>
                   </div>
                   {n.status !== 'read' && (

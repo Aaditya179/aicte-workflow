@@ -56,7 +56,7 @@ export default function ApplicationFormCard({ form }: { form: ApplicationForm })
   return (
     <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider">Application</h2>
+        <h2 className="text-base font-serif font-bold text-[#1C1917]">Application</h2>
         <Link href={`/documents/${form.document_id}`} className="flex items-center gap-1 text-xs font-medium text-[#C25E26] hover:underline">
           <FileText className="h-3.5 w-3.5" aria-hidden="true" /> Form in the case file
         </Link>

@@ -68,7 +68,7 @@ function AlertAckContent() {
           <div className="py-12 space-y-4">
             <Loader2 className="w-12 h-12 animate-spin text-[#C25E26] mx-auto" />
             <h2 className="text-lg font-serif font-bold text-[#1C1917]">
-              Verifying Cryptographic Signature...
+              Checking the link…
             </h2>
             <p className="text-xs text-stone-500">
               Validating HMAC-SHA256 token and recording append-only audit trail.
@@ -143,7 +143,7 @@ function AlertAckContent() {
               href="/login"
               className="w-full py-2.5 px-4 rounded-full text-xs font-medium bg-[#C25E26] hover:bg-[#A84A19] text-white transition shadow-2xs inline-flex items-center justify-center gap-1.5"
             >
-              Sign In to AICTE Portal <ArrowRight className="w-4 h-4" />
+              Sign in <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         )}

@@ -111,12 +111,12 @@ def _consistency_flags(docs: List[Dict[str, Any]], inst: Dict[str, Any]) -> Tupl
         meta = _meta(d)
         start, until = _date(meta.get("start_date")), _date(d.get("valid_until"))
         if start and until and start > until:
-            flag(d, f"'{_doc_label(d)}' starts on {start.isoformat()}, after its expiry on {until.isoformat()}")
+            flag(d, f"'{_doc_label(d)}' starts on {clock.display_date(start)}, after its expiry on {clock.display_date(until)}")
         # A date typed by hand that differs from the one printed on the document
         printed = _date(d.get("ocr_suggested_expiry"))
         if d.get("ocr_status") == "edited" and printed and until and printed != until:
-            flag(d, f"'{_doc_label(d)}' expiry was entered by hand as {until.isoformat()}, "
-                    f"but the document reads {printed.isoformat()}")
+            flag(d, f"'{_doc_label(d)}' expiry was entered by hand as {clock.display_date(until)}, "
+                    f"but the document reads {clock.display_date(printed)}")
 
     return flags, compared
 
@@ -191,7 +191,7 @@ class AssuranceService:
                 flags.append({
                     "check_type": "freshness",
                     "severity": "critical",
-                    "message": f"Document '{s.get('title') or s.get('doc_type')}' expired on {s.get('valid_until')}",
+                    "message": f"Document '{s.get('title') or s.get('doc_type')}' expired on {clock.display_date(s.get('valid_until'))}",
                     "entity_type": "documents",
                     "entity_id": s.get("id")
                 })
@@ -623,7 +623,7 @@ class AssuranceService:
                         flags.append({
                             "check_type": "post_decision_freshness",
                             "severity": "warning",
-                            "message": f"Evidence relied upon during approval expired on {valid_until_str} ({doc_label})",
+                            "message": f"Evidence relied upon during approval expired on {clock.display_date(valid_until_str)} ({doc_label})",
                             "entity_type": "decision_evidence",
                             "entity_id": ev.get("id")
                         })

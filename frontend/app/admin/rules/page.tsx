@@ -194,7 +194,7 @@ export default function AdminRulesPage() {
                         {rule.scope}
                       </span>
                       <span className={`text-[11px] font-semibold ${rule.is_active ? 'text-emerald-700' : 'text-stone-400'}`}>
-                        {rule.is_active ? 'Active Rule' : 'Disabled'}
+                        {rule.is_active ? 'Active rule' : 'Disabled'}
                       </span>
                     </div>
 
@@ -252,8 +252,8 @@ export default function AdminRulesPage() {
               <div key={chain.scope || cIdx} className="bg-white p-6 rounded-2xl border border-[#E8E2D8] shadow-2xs">
                 <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-[#E8E2D8] gap-3">
                   <div>
-                    <h3 className="font-serif font-bold text-base text-stone-900 uppercase">
-                      Escalation Chain: {chain.scope}
+                    <h3 className="font-serif font-bold text-base text-stone-900">
+                      Escalation chain: {chain.scope}
                     </h3>
                     <p className="text-xs text-stone-500 mt-0.5">
                       Progressive notification tiers fired when SLA delays breach configured thresholds.

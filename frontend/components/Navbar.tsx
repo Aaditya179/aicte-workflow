@@ -26,7 +26,7 @@ const L = {
   approvals: { href: '/admin/approvals', label: 'Approvals' },
   rules: { href: '/admin/rules', label: 'Rules' },
   users: { href: '/admin/users', label: 'Users' },
-  simulator: { href: '/admin/simulator', label: 'Time Simulator' },
+  simulator: { href: '/admin/simulator', label: 'Time simulator' },
 } satisfies Record<string, NavLink>;
 
 // Each role sees only the pages it can use; the administrator and auditor have no case pages (§15.0)

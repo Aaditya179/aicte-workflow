@@ -48,10 +48,10 @@ def _placeholders(app: Dict[str, Any], user: AuthenticatedUser) -> Dict[str, Any
         "application_no": app["application_no"],
         "institution_name": inst[0]["name"] if inst else "",
         "stage": app.get("current_stage", ""),
-        "due_date": str(due)[:10] if due else (clock.now() + timedelta(days=15)).date().isoformat(),
+        "due_date": clock.display_date(due if due else clock.now() + timedelta(days=15)),
         "officer_name": user.full_name or "",
         "link": f"{settings.FRONTEND_ORIGIN}/applications/{app['id']}",
-        "today": clock.now().date().isoformat(),
+        "today": clock.display_date(clock.now()),
     }
 
 

@@ -39,7 +39,7 @@ def test_deadline_facts():
                                "is 5 days overdue at Scrutiny.")
     assert overdue["link"] == "/applications/a" and overdue["severity"] == "critical"
     assert soon["text"] == ("1 application in your region will pass the stage deadline in the next 7 days, "
-                            "the first being C-1 on 3 Nov.")
+                            "the first being C-1 on 03/11/2026.")
 
 
 def test_unsupported_summary_falls_back_to_the_facts():

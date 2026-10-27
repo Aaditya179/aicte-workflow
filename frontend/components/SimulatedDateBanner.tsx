@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { FastForward, RotateCcw } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
+import { formatDateTime } from '@/components/ui';
 
 interface ClockStatus {
   clock_now: string;
@@ -50,14 +51,7 @@ export default function SimulatedDateBanner() {
         <span>
           <strong>Time-Travel Active:</strong> Simulated date is{' '}
           <span className="font-bold underline decoration-amber-200">
-            {new Date(clockData.clock_now).toLocaleDateString(undefined, {
-              weekday: 'short',
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            {formatDateTime(clockData.clock_now)}
           </span>{' '}
           (+{clockData.offset_days} days)
         </span>

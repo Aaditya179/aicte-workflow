@@ -15,6 +15,7 @@ import {
   Database,
   Lock
 } from 'lucide-react';
+import { formatDateTime, formatTime } from '@/components/ui';
 
 interface AuditEntry {
   seq: number;
@@ -121,14 +122,14 @@ export default function AuditLogPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 tracking-tight">
-              Cryptographic Audit Chain
+              Audit trail
             </h1>
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] flex items-center gap-1.5 shadow-2xs">
-              <Lock className="w-3 h-3 text-[#C25E26]" /> SHA-256 Chained
+              <Lock className="w-3 h-3 text-[#C25E26]" /> Tamper-evident
             </span>
           </div>
           <p className="text-sm text-stone-600 mt-1.5 font-sans">
-            Tamper-evident sequential ledger of every application transition, clock shift, and administrative decision.
+            Every stage move, decision, document action and rule change, in order. Each entry is linked to the one before it by a SHA-256 hash, so any edit breaks the chain.
           </p>
         </div>
 
@@ -175,7 +176,7 @@ export default function AuditLogPage() {
             )}
             <div className="flex-1 text-sm">
               <h4 className="font-bold text-base font-serif">
-                {verifyResult.ok ? 'Ledger Integrity Cryptographically Verified' : 'Integrity Check Failed - Tampering Detected'}
+                {verifyResult.ok ? 'Every entry checks out: nothing has been changed' : 'Check failed: an entry has been changed'}
               </h4>
               <p className="mt-0.5 text-stone-700">
                 {verifyResult.ok 
@@ -268,7 +269,7 @@ export default function AuditLogPage() {
                         {entry.actor_role?.replace('_', ' ')}
                       </td>
                       <td className="py-2.5 px-3 text-stone-400 whitespace-nowrap">
-                        {new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(entry.created_at)}
                       </td>
                     </tr>
                   );
@@ -288,7 +289,7 @@ export default function AuditLogPage() {
                     Block #{selectedEntry.seq}: {selectedEntry.action}
                   </h3>
                   <p className="text-xs text-stone-500 mt-0.5 font-mono">
-                    {new Date(selectedEntry.created_at).toLocaleString()}
+                    {formatDateTime(selectedEntry.created_at)}
                   </p>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE]">
@@ -322,8 +323,8 @@ export default function AuditLogPage() {
 
               {/* State Before / After Diff */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <FileCode className="w-3.5 h-3.5 text-[#C25E26]" /> State Transition Payload
+                <h4 className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-[#C25E26]" /> Before and after
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3">

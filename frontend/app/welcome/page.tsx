@@ -26,6 +26,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { TWO_MINUTE_STEPS, SAMPLE_LEASE_HREF, demoLoginHref } from '@/lib/demoPath';
+import ServerWakeNote from '@/components/ServerWakeNote';
 
 const DEMO_ROLES = [
   { role: 'institution', label: 'Institution', icon: FileText, does: 'Submits applications, answers deficiencies, renews documents and sees its compliance calendar.' },
@@ -180,6 +181,7 @@ export default function WelcomePage() {
                 All data is dummy. The connection to the AICTE portal is simulated, and SMS and WhatsApp
                 messages are logged instead of sent.
               </p>
+              <ServerWakeNote className="max-w-lg" />
 
               <ul className="pt-1 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-stone-500">
                 <li className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#C25E26]" aria-hidden /> Time limit on every stage</li>

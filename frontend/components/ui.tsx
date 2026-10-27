@@ -78,14 +78,32 @@ export function useMe() {
   return { me, error };
 }
 
-export function formatDate(value?: string | null) {
-  if (!value) return '—';
-  const d = new Date(value.length === 10 ? `${value}T00:00:00` : value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+// Dates are shown as dd/mm/yyyy everywhere; a date-only value ("2026-11-03") is read as a local day
+function toDate(value: string | Date): Date {
+  if (value instanceof Date) return value;
+  return new Date(value.length === 10 ? `${value}T00:00:00` : value);
 }
 
-export function formatDateTime(value?: string | null) {
+function ddmmyyyy(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+export function formatTime(value?: string | Date | null) {
   if (!value) return '—';
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const d = toDate(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+export function formatDate(value?: string | Date | null, opts: { weekday?: boolean } = {}) {
+  if (!value) return '—';
+  const d = toDate(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return opts.weekday ? `${d.toLocaleDateString('en-IN', { weekday: 'short' })}, ${ddmmyyyy(d)}` : ddmmyyyy(d);
+}
+
+export function formatDateTime(value?: string | Date | null) {
+  if (!value) return '—';
+  const d = toDate(value);
+  return Number.isNaN(d.getTime()) ? String(value) : `${ddmmyyyy(d)}, ${formatTime(d)}`;
 }

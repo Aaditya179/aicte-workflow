@@ -268,6 +268,35 @@ def polish_text(text: str) -> Dict[str, Any]:
     }
 
 
+BRIEF_SCHEMA = {
+    "type": "object",
+    "properties": {"summary": {"type": "string", "description": "Two or three sentences, at most 70 words"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
+
+BRIEF_ROLES = {
+    "institution": "an institution's compliance team", "scrutiny_officer": "a scrutiny officer",
+    "regional_officer": "a regional officer", "evc_member": "an EVC member",
+    "sac_shc_member": "an SAC/SHC committee member", "bureau_officer": "a bureau officer",
+}
+
+BRIEF_SYSTEM = (
+    "You write the morning brief for {role} at AICTE. You are given today's facts, most urgent first. "
+    "Write two or three plain sentences, at most 70 words, that lead with what needs action soonest. "
+    "Use only the facts given: do not add, combine or estimate any number, date or reference, write every "
+    "number in digits exactly as given, and copy application numbers exactly. Add no advice, reminders or "
+    "filler beyond the facts; if nothing is urgent, say so in one sentence. Do not recommend approving, "
+    "rejecting or deciding any case. No greeting, no headings, no lists."
+)
+
+
+def write_daily_brief(role: str, facts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """A short summary of the brief's facts, or None (the caller then uses a template)."""
+    system = BRIEF_SYSTEM.format(role=BRIEF_ROLES.get(role, "an officer"))
+    lines = "\n".join(f"- [{f['severity']}] {f['text']}" for f in facts)
+    return _complete(system, "Today's facts:\n" + lines, schema=BRIEF_SCHEMA, max_tokens=1000, temperature=0)
+
 NL_FILTER_SCHEMA = {
     "type": "object",
     "properties": {

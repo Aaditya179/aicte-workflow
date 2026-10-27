@@ -323,6 +323,16 @@ async def get_institution_dashboard(
     }
 
 
+@router.get("/brief")
+async def get_daily_brief(user: AuthenticatedUser = Depends(require_case_access)):
+    """
+    Daily brief for the signed-in officer or institution: today's facts, each with a link, and a
+    short summary of them. Follows the simulated clock.
+    """
+    from services.brief import build_brief
+    return build_brief(user)
+
+
 @router.get("/admin")
 async def get_admin_dashboard(user: AuthenticatedUser = Depends(require_role(["admin"]))):
     """

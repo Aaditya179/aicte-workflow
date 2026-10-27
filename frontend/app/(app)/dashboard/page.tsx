@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import NextComplianceItems from '@/components/NextComplianceItems';
+import DailyBrief from '@/components/DailyBrief';
 import {
   FileText, ShieldAlert, AlertTriangle, FastForward,
   Clock, ArrowRight, UserCheck, Building2, CheckCircle2,
@@ -226,6 +227,8 @@ function DashboardContent() {
         <Shield className="w-4 h-4 shrink-0" />
         <span>Advisory only, final decisions rest with the competent authority.</span>
       </div>
+
+      <DailyBrief />
 
       {/* Institution: next three compliance items (§15.6) */}
       {role === 'institution' && <NextComplianceItems />}

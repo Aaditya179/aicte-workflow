@@ -2,7 +2,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, List
+import time
+import httpx
 import jwt
+from supabase_auth.errors import AuthRetryableError
 from core.config import settings
 from supabase import create_client, Client
 
@@ -35,6 +38,22 @@ def _unverified_claims(token: str) -> dict:
         return {}
 
 
+def _supabase_user(token: str):
+    """
+    The token's user as Supabase sees it. Dropped connections are retried, and an unreachable
+    Supabase is a 503 so a network blip does not read as an expired session.
+    """
+    for attempt in range(3):
+        try:
+            res = supabase_admin.auth.get_user(token)
+            return res.user if res else None
+        except (httpx.TransportError, AuthRetryableError):
+            if attempt == 2:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                    detail="Sign-in service unreachable, please retry")
+            time.sleep(0.2 * (attempt + 1))
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
 ) -> AuthenticatedUser:
@@ -48,15 +67,17 @@ async def get_current_user(
 
     # First attempt: Verify via Supabase Auth API
     try:
-        user_res = supabase_admin.auth.get_user(token)
-        if user_res and user_res.user:
-            user_id = user_res.user.id
-            email = user_res.user.email
-            app_meta = user_res.user.app_metadata or {}
+        user = _supabase_user(token)
+        if user:
+            user_id = user.id
+            email = user.email
+            app_meta = user.app_metadata or {}
             role = app_meta.get("role")
             region_id = app_meta.get("region_id")
             institution_id = app_meta.get("institution_id")
             claims = _unverified_claims(token)
+    except HTTPException:
+        raise
     except Exception:
         # Fallback: Attempt local JWT decode if secret matches
         try:
@@ -85,7 +106,10 @@ async def get_current_user(
         )
 
     # The profile is the source of truth for role and scope
-    profile_res = supabase_admin.table("profiles").select("*").eq("user_id", user_id).execute()
+    try:
+        profile_res = supabase_admin.table("profiles").select("*").eq("user_id", user_id).execute()
+    except httpx.TransportError:
+        profile_res = supabase_admin.table("profiles").select("*").eq("user_id", user_id).execute()
     full_name = None
     if profile_res.data and len(profile_res.data) > 0:
         p = profile_res.data[0]

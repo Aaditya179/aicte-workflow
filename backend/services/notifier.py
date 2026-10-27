@@ -8,9 +8,11 @@ in the recipient's locale. Email goes through Resend and SMS/WhatsApp through Tw
 unconfigured provider is simulated (logged, `provider_ref` prefixed `simulated:`) so the demo works.
 A failed delivery on a critical alert falls back to the next channel.
 """
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Optional, List, Dict, Any
 import logging
 import re
+import time
 import uuid
 
 import httpx
@@ -56,19 +58,34 @@ class DeliveryError(Exception):
     pass
 
 
+_EMAIL_CACHE: Dict[str, str] = {}
+_TEMPLATE_CACHE: Dict[tuple, tuple] = {}
+TEMPLATE_CACHE_SECONDS = 300
+
+# External channels are slow (one provider call each, and Resend allows about 2 requests a second),
+# so they go out from a small worker pool and a scheduler run is not held up by them.
+_delivery_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="delivery")
+
+
 def _get_user_email(user_id: str) -> Optional[str]:
+    if user_id in _EMAIL_CACHE:
+        return _EMAIL_CACHE[user_id]
     try:
-        res = _supabase.auth.admin.get_user_by_id(user_id)
-        return res.user.email if res and res.user else None
+        res = with_retry(lambda: _supabase.auth.admin.get_user_by_id(user_id))
+        email = res.user.email if res and res.user else None
     except Exception as e:
         logger.warning(f"Could not look up email for {user_id}: {e}")
         return None
+    if email:
+        _EMAIL_CACHE[user_id] = email
+    return email
 
 
 def _profiles(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     if not user_ids:
         return {}
-    rows = _supabase.table("profiles").select("user_id, phone, locale").in_("user_id", user_ids).execute().data or []
+    rows = with_retry(lambda: _supabase.table("profiles").select("user_id, phone, locale")
+                      .in_("user_id", user_ids).execute()).data or []
     return {r["user_id"]: r for r in rows}
 
 
@@ -79,16 +96,23 @@ def render(template: str, values: Dict[str, Any]) -> str:
 
 def get_template(code: str, channel: str, locale: str) -> Dict[str, str]:
     """The template for this code, channel and locale, falling back to email, then English."""
+    key = (code, channel, locale)
+    cached = _TEMPLATE_CACHE.get(key)
+    if cached and time.monotonic() - cached[0] < TEMPLATE_CACHE_SECONDS:
+        return cached[1]
+    result = _FALLBACK_TEMPLATES.get(locale, _FALLBACK_TEMPLATES["en"])
     for ch, loc in ((channel, locale), ("email", locale), (channel, "en"), ("email", "en")):
         try:
-            res = _supabase.table("message_templates").select("subject, body") \
-                .eq("code", code).eq("channel", ch).eq("locale", loc).limit(1).execute()
+            res = with_retry(lambda: _supabase.table("message_templates").select("subject, body")
+                             .eq("code", code).eq("channel", ch).eq("locale", loc).limit(1).execute())
             if res.data:
-                return res.data[0]
+                result = res.data[0]
+                break
         except Exception as e:
             logger.warning(f"message_templates lookup failed: {e}")
             break
-    return _FALLBACK_TEMPLATES.get(locale, _FALLBACK_TEMPLATES["en"])
+    _TEMPLATE_CACHE[key] = (time.monotonic(), result)
+    return result
 
 
 def _simulated(channel: str, to: str, subject: Optional[str], body: str) -> Dict[str, Any]:
@@ -143,9 +167,20 @@ def send_channel(channel: str, recipient: Dict[str, Any], subject: Optional[str]
     raise DeliveryError(f"Unknown channel {channel}")
 
 
+def with_retry(fn, attempts: int = 3):
+    """Run a Supabase call, retrying dropped connections (seen when the scheduler runs checks in parallel)."""
+    for i in range(attempts):
+        try:
+            return fn()
+        except httpx.TransportError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.2 * (i + 1))
+
+
 def _insert(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     try:
-        res = _supabase.table("notifications").insert(row).execute()
+        res = with_retry(lambda: _supabase.table("notifications").insert(row).execute())
         return res.data[0] if res.data else None
     except Exception as e:
         logger.error(f"Failed to insert notification: {e}")
@@ -174,7 +209,7 @@ def _deliver_external(
     except Exception as e:
         logger.warning(f"{notification['channel']} delivery to {recipient['user_id']} failed: {e}")
         update = {"status": "failed", "delivery_status": "failed", "provider_ref": f"error:{str(e)[:120]}"}
-    res = _supabase.table("notifications").update(update).eq("id", notification["id"]).execute()
+    res = with_retry(lambda: _supabase.table("notifications").update(update).eq("id", notification["id"]).execute())
     return res.data[0] if res.data else {**notification, **update}
 
 
@@ -211,16 +246,22 @@ def dispatch_alert(
     kind: Optional[str] = None,
     reference_no: Optional[str] = None,
     due_date: Optional[str] = None,
+    wait: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Notify each recipient on every channel of the escalation level (§15.5). External channels
     send only safe content. A failed delivery on a critical alert moves to the next channel.
+
+    In-app rows are written straight away, so the bell and realtime update at once. With
+    wait=False (the scheduler), email, SMS and WhatsApp go out from the delivery pool and only
+    the in-app rows are returned; the delivery page shows the rest as they complete.
     """
     from services import email as email_service
 
     channels = [c for c in (channels or DEFAULT_CHANNELS.get(severity, ["in_app"])) if c in CHANNEL_ORDER]
     if "in_app" not in channels:
         channels.insert(0, "in_app")
+    external = [c for c in channels if c != "in_app"]
     unique_uids = list(dict.fromkeys(user_ids))
     profiles = _profiles(unique_uids)
     now_iso = clock.now().isoformat()
@@ -229,27 +270,53 @@ def dispatch_alert(
 
     for uid in unique_uids:
         prof = profiles.get(uid, {})
-        locale = prof.get("locale") or "en"
-        recipient = {"user_id": uid, "phone": prof.get("phone"), "email": None}
-        link = email_service.generate_signed_ack_url(alert_id, uid)
-        used: List[str] = []
-        queue = list(channels)
+        row = _insert({
+            "user_id": uid, "alert_id": alert_id, "channel": "in_app", "title": title, "body": body,
+            "status": "sent", "sent_at": now_iso, "delivery_status": "delivered", "delivered_at": now_iso,
+        })
+        if not row:
+            continue  # unknown recipient: no profile, so no external delivery either
+        results.append(row)
+        if not external:
+            continue
+        job = dict(uid=uid, prof=prof, channels=external, title=title, alert_id=alert_id, severity=severity,
+                   kind=kind, reference_no=reference_no, due_date=due_date or "",
+                   link=email_service.generate_signed_ack_url(alert_id, uid))
+        if wait:
+            results.extend(_deliver_externals(**job))
+        else:
+            _pending.append(_delivery_pool.submit(_deliver_externals, **job))
+    return results
+
+
+_pending: List[Future] = []
+
+
+def drain(timeout: Optional[float] = None) -> None:
+    """Wait for queued external deliveries (tests, and graceful shutdown)."""
+    futures, _pending[:] = list(_pending), []
+    wait(futures, timeout=timeout)
+
+
+def _deliver_externals(
+    uid: str, prof: Dict[str, Any], channels: List[str], title: str, alert_id: str, severity: str,
+    kind: Optional[str], reference_no: str, due_date: str, link: str,
+) -> List[Dict[str, Any]]:
+    """External channels for one recipient, with fallback to the next channel on a critical failure."""
+    locale = prof.get("locale") or "en"
+    recipient = {"user_id": uid, "phone": prof.get("phone"), "email": None}
+    results: List[Dict[str, Any]] = []
+    used: List[str] = ["in_app"]
+    queue = list(channels)
+    try:
         while queue:
             channel = queue.pop(0)
             if channel in used:
                 continue
             used.append(channel)
-            if channel == "in_app":
-                row = _insert({
-                    "user_id": uid, "alert_id": alert_id, "channel": "in_app", "title": title, "body": body,
-                    "status": "sent", "sent_at": now_iso, "delivery_status": "delivered", "delivered_at": now_iso,
-                })
-                if row:
-                    results.append(row)
-                continue
             if channel == "email" and recipient["email"] is None:
                 recipient["email"] = _get_user_email(uid) or ""
-            msg = _external_message(kind, channel, locale, reference_no, link, due_date or "")
+            msg = _external_message(kind, channel, locale, reference_no, link, due_date)
             row = _insert({
                 "user_id": uid, "alert_id": alert_id, "channel": channel, "title": msg["subject"] or title,
                 "body": msg["body"], "status": "queued", "delivery_status": "queued",
@@ -263,6 +330,8 @@ def dispatch_alert(
                 if nxt:
                     logger.info(f"Critical alert {alert_id}: {channel} failed for {uid}, falling back to {nxt}")
                     queue.insert(0, nxt)
+    except Exception as e:
+        logger.error(f"External delivery for alert {alert_id} to {uid} failed: {e}")
     return results
 
 
@@ -334,6 +403,7 @@ def notify_users(
     kind: Optional[str] = None,
     reference_no: Optional[str] = None,
     due_date: Optional[str] = None,
+    wait: bool = True,
 ) -> List[dict]:
     """
     Notify several users. Alerts go out on their channels through dispatch_alert; plain
@@ -344,7 +414,7 @@ def notify_users(
     if alert_id:
         return dispatch_alert(
             user_ids, title, body, alert_id, severity or "info",
-            channels=channels, kind=kind, reference_no=reference_no, due_date=due_date,
+            channels=channels, kind=kind, reference_no=reference_no, due_date=due_date, wait=wait,
         )
     results = []
     for uid in dict.fromkeys(user_ids):

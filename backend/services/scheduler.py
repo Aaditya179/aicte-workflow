@@ -10,6 +10,7 @@ import asyncio
 import concurrent.futures
 import logging
 import math
+import threading
 
 from core.config import settings
 from core import clock
@@ -95,13 +96,70 @@ def get_sla_rule(
     return {"reminder_offsets_days": [7, 3, 1]}
 
 
+_post_run_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="scheduler-post-run")
+
+
+def _post_run_tasks(sim_now: datetime) -> None:
+    """Health score recompute, then the post-decision assurance recheck once per simulated day."""
+    try:
+        from services import health_score
+        health_score.recompute_all_health_scores(sim_now)
+    except Exception as he:
+        logger.warning(f"Health score recompute warning: {he}")
+
+    global _last_recheck_day
+    if _last_recheck_day != sim_now.date():
+        try:
+            from services.assurance import assurance_service
+            _run_coroutine(assurance_service.run_daily_post_decision_recheck())
+            _last_recheck_day = sim_now.date()
+        except Exception as ae:
+            logger.warning(f"Assurance recheck warning: {ae}")
+
+
+# Per-run caches, filled by run_once and cleared when it ends. Each Supabase call costs about
+# 0.2 s, so loading shared rows once per run instead of once per alert keeps a run to seconds.
+_run_cache: Dict[str, Any] = {}
+
+
+def _alert_key(entity_type: str, entity_id: str, kind: str, level: int, cycle: str) -> tuple:
+    return (entity_type, str(entity_id), kind, int(level or 0), cycle or "")
+
+
+def _prefetch_run_cache() -> None:
+    _run_cache.clear()
+    _run_cache["profile_ids"] = {}
+    try:
+        _run_cache["chains"] = _supabase.table("escalation_chains").select("*").execute().data or []
+    except Exception as e:
+        logger.warning(f"Could not preload escalation chains: {e}")
+    use_cycle = _supports_alert_cycle()
+    cols = "entity_type, entity_id, kind, level" + (", cycle" if use_cycle else "")
+    keys = set()
+    try:
+        page, size = 0, 1000
+        while True:
+            batch = _supabase.table("alerts").select(cols).range(page * size, page * size + size - 1).execute().data or []
+            keys.update(_alert_key(a["entity_type"], a["entity_id"], a["kind"], a["level"], a.get("cycle") if use_cycle else "")
+                        for a in batch)
+            if len(batch) < size:
+                break
+            page += 1
+        _run_cache["alert_keys"] = keys
+    except Exception as e:
+        logger.warning(f"Could not preload alert keys; checking each alert instead: {e}")
+
+
 def get_escalation_chain(scope: str, region_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Escalation chain for a scope. Region-specific rows override the national row; scopes without
     their own chain use the application_stage chain, which is the national default.
     """
     try:
-        rows = _supabase.table("escalation_chains").select("*").in_("scope", [scope, "application_stage"]).execute().data or []
+        if "chains" in _run_cache:
+            rows = [r for r in _run_cache["chains"] if r.get("scope") in (scope, "application_stage")]
+        else:
+            rows = _supabase.table("escalation_chains").select("*").in_("scope", [scope, "application_stage"]).execute().data or []
         for want_scope in (scope, "application_stage"):
             for want_region in (region_id, None):
                 for row in rows:
@@ -113,10 +171,17 @@ def get_escalation_chain(scope: str, region_id: Optional[str] = None) -> Dict[st
 
 
 def _profile_ids(**filters) -> List[str]:
+    cache = _run_cache.get("profile_ids")
+    key = tuple(sorted(filters.items()))
+    if cache is not None and key in cache:
+        return list(cache[key])
     q = _supabase.table("profiles").select("user_id")
     for k, v in filters.items():
         q = q.eq(k, v)
-    return [u["user_id"] for u in (q.execute().data or [])]
+    ids = [u["user_id"] for u in (q.execute().data or [])]
+    if cache is not None:
+        cache[key] = ids
+    return ids
 
 
 def _institution_users(entity_row: Dict[str, Any]) -> List[str]:
@@ -155,25 +220,30 @@ def resolve_targets(
     notify_role: Optional[str] = None
 ) -> List[str]:
     """Identify user_ids that should receive notification for this alert."""
-    target_user_ids: List[str] = []
     try:
-        region_id = entity_row.get("region_id")
-        if kind != "escalation":
-            target_user_ids = _responsible_users(entity_type, entity_row)
-            # Late undertakings concern the regional office as well as the institution
-            if kind == "overdue" and entity_type == "undertaking" and region_id:
-                target_user_ids += _profile_ids(region_id=region_id, role="regional_officer")
-        else:
-            role = notify_role or {1: "assigned_officer", 2: "regional_officer", 3: "bureau_officer"}.get(level, "bureau_officer")
-            if role == "assigned_officer":
-                target_user_ids = _responsible_users(entity_type, entity_row)
-            elif role == "bureau_officer":
-                target_user_ids = _profile_ids(role="bureau_officer")
-            elif region_id:
-                target_user_ids = _profile_ids(region_id=region_id, role=role)
+        return notifier.with_retry(lambda: _targets(entity_type, entity_row, kind, level, notify_role))
     except Exception as e:
         logger.error(f"Error resolving targets for {entity_type} {kind}: {e}")
+        return []
 
+
+def _targets(entity_type: str, entity_row: Dict[str, Any], kind: str, level: int,
+             notify_role: Optional[str]) -> List[str]:
+    target_user_ids: List[str] = []
+    region_id = entity_row.get("region_id")
+    if kind != "escalation":
+        target_user_ids = _responsible_users(entity_type, entity_row)
+        # Late undertakings concern the regional office as well as the institution
+        if kind == "overdue" and entity_type == "undertaking" and region_id:
+            target_user_ids += _profile_ids(region_id=region_id, role="regional_officer")
+    else:
+        role = notify_role or {1: "assigned_officer", 2: "regional_officer", 3: "bureau_officer"}.get(level, "bureau_officer")
+        if role == "assigned_officer":
+            target_user_ids = _responsible_users(entity_type, entity_row)
+        elif role == "bureau_officer":
+            target_user_ids = _profile_ids(role="bureau_officer")
+        elif region_id:
+            target_user_ids = _profile_ids(region_id=region_id, role=role)
     return list(set(target_user_ids))
 
 
@@ -203,19 +273,23 @@ def fire_alert(
     entity_id = entity_row["id"]
     use_cycle = _supports_alert_cycle()
     cycle = _alert_cycle(entity_type, entity_row)
+    key = _alert_key(entity_type, entity_id, kind, level, cycle if use_cycle else "")
     try:
-        # Check if already fired
-        q = _supabase.table("alerts").select("id") \
-            .eq("entity_type", entity_type) \
-            .eq("entity_id", entity_id) \
-            .eq("kind", kind) \
-            .eq("level", level)
-        if use_cycle:
-            q = q.eq("cycle", cycle)
-        existing = q.execute()
-
-        if existing.data and len(existing.data) > 0:
-            return None
+        # Check if already fired: from the run's preloaded keys, or one query outside a run
+        known = _run_cache.get("alert_keys")
+        if known is not None:
+            if key in known:
+                return None
+        else:
+            q = _supabase.table("alerts").select("id") \
+                .eq("entity_type", entity_type) \
+                .eq("entity_id", entity_id) \
+                .eq("kind", kind) \
+                .eq("level", level)
+            if use_cycle:
+                q = q.eq("cycle", cycle)
+            if q.execute().data:
+                return None
 
         targets = resolve_targets(entity_type, entity_row, kind, level, notify_role=target_role)
         target_uid = targets[0] if len(targets) == 1 else None
@@ -235,10 +309,12 @@ def fire_alert(
         }
         if use_cycle:
             alert_payload["cycle"] = cycle
-        res = _supabase.table("alerts").insert(alert_payload).execute()
+        res = notifier.with_retry(lambda: _supabase.table("alerts").insert(alert_payload).execute())
         if not res.data:
             return None
         created_alert = res.data[0]
+        if known is not None:
+            known.add(key)
 
         # Send in-app notifications to all target recipients
         title = f"[{severity.upper()}] {kind.title()} Alert"
@@ -253,6 +329,7 @@ def fire_alert(
                 kind=kind,
                 reference_no=_reference_no(entity_type, entity_row),
                 due_date=due.date().isoformat() if due else None,
+                wait=False,  # email/SMS/WhatsApp go out in the background; the run is not held up
             )
 
         return created_alert
@@ -312,7 +389,16 @@ def _check_deadline(
     return created, escalated
 
 
+# One pass at a time: the minute job and an admin clock move share the per-run cache
+_run_lock = threading.Lock()
+
+
 def run_once() -> Dict[str, Any]:
+    with _run_lock:
+        return _run_once()
+
+
+def _run_once() -> Dict[str, Any]:
     """
     Execute full scheduler pass.
     1. Scan applications for upcoming / overdue / escalations.
@@ -328,12 +414,17 @@ def run_once() -> Dict[str, Any]:
     alerts_created = 0
     escalations_created = 0
     errors = []
+    _prefetch_run_cache()
 
     def tally(result: Tuple[int, int]) -> None:
         nonlocal alerts_created, escalations_created
         alerts_created += result[0]
         escalations_created += result[1]
 
+    # Each deadline check is a few database round trips of about 0.2 s, so sections 1-4 queue
+    # their checks on one pool and run them in parallel; results are collected before section 5.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="scheduler-check")
+    futures: List[concurrent.futures.Future] = []
     try:
         # ---------------------------------------------------------
         # 1. APPLICATION STAGE MONITORING
@@ -342,15 +433,18 @@ def run_once() -> Dict[str, Any]:
         stage_rules = _load_rules("stage")
         apps_res = _supabase.table("applications").select("*") \
             .in_("status", ["in_progress", "returned"]).not_.is_("due_at", "null").execute()
-        for app in apps_res.data or []:
+
+        def check_app(app: Dict[str, Any]) -> Tuple[int, int]:
             due_at = _parse_dt(app.get("due_at"))
             if not due_at:
-                continue
+                return (0, 0)
             stage = app.get("current_stage", "scrutiny")
             rule = get_sla_rule("stage", stage_key=stage, region_id=app.get("region_id"), rules=stage_rules)
             label = f"{app.get('application_no', 'Application')} in stage '{stage}'"
-            tally(_check_deadline("application_stage", app, due_at, sim_now,
-                                  rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming", label, "application_stage"))
+            return _check_deadline("application_stage", app, due_at, sim_now,
+                                   rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming", label, "application_stage")
+
+        futures.extend(pool.submit(check_app, app) for app in apps_res.data or [])
 
         # ---------------------------------------------------------
         # 2. EVC SCHEDULING & COMPLETION
@@ -369,14 +463,14 @@ def run_once() -> Dict[str, Any]:
                 due = _parse_dt(evc.get("scheduling_due_at"))
                 if due:
                     rule = get_sla_rule("evc_scheduling", region_id=evc["region_id"], rules=sched_rules)
-                    tally(_check_deadline("evc_scheduling", evc, due, sim_now,
+                    futures.append(pool.submit(_check_deadline, "evc_scheduling", evc, due, sim_now,
                                           rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
                                           f"EVC scheduling for {app_label}", "evc_scheduling"))
             else:
                 due = _parse_dt(evc.get("completion_due_at"))
                 if due:
                     rule = get_sla_rule("evc_completion", region_id=evc["region_id"], rules=compl_rules)
-                    tally(_check_deadline("evc_completion", evc, due, sim_now,
+                    futures.append(pool.submit(_check_deadline, "evc_completion", evc, due, sim_now,
                                           rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
                                           f"EVC visit and report for {app_label}", "evc_completion"))
 
@@ -392,7 +486,7 @@ def run_once() -> Dict[str, Any]:
             due = _parse_dt(ut.get("due_at"))
             if due:
                 rule = get_sla_rule("undertaking", region_id=ut["region_id"], rules=ut_rules)
-                tally(_check_deadline("undertaking", ut, due, sim_now,
+                futures.append(pool.submit(_check_deadline, "undertaking", ut, due, sim_now,
                                       rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
                                       f"Undertaking '{ut['title']}'", "undertaking"))
 
@@ -410,9 +504,16 @@ def run_once() -> Dict[str, Any]:
             if valid_until:
                 valid_until += timedelta(days=1)
                 rule = get_sla_rule("document_expiry", region_id=doc["region_id"], rules=doc_rules)
-                tally(_check_deadline("document", doc, valid_until, sim_now,
+                futures.append(pool.submit(_check_deadline, "document", doc, valid_until, sim_now,
                                       rule.get("reminder_offsets_days") or [90, 60, 30, 7], "expiry",
                                       f"Document '{doc['doc_type']}' ({doc.get('title', '')})", "document"))
+
+        for f in futures:
+            try:
+                tally(f.result())
+            except Exception as ce:
+                logger.error(f"Deadline check failed: {ce}")
+                errors.append(str(ce))
 
         # ---------------------------------------------------------
         # 5. AUTO-RESOLVE CLEARED ALERTS
@@ -427,29 +528,18 @@ def run_once() -> Dict[str, Any]:
         escalations_created += reescalated
 
         # ---------------------------------------------------------
-        # 7. RECOMPUTE COMPLIANCE HEALTH SCORES (§10.2)
+        # 7-8. HEALTH SCORES (§10.2) AND POST-DECISION RECHECK (§15.2)
+        # They take tens of seconds and nothing in this run depends on them, so they run in the
+        # background and the time simulator's button returns as soon as the alerts are out.
         # ---------------------------------------------------------
-        try:
-            from services import health_score
-            health_score.recompute_all_health_scores(sim_now)
-        except Exception as he:
-            logger.warning(f"Health score recompute warning: {he}")
-
-        # ---------------------------------------------------------
-        # 8. POST-DECISION ASSURANCE RECHECK (§15.2), once per simulated day
-        # ---------------------------------------------------------
-        global _last_recheck_day
-        if _last_recheck_day != sim_now.date():
-            try:
-                from services.assurance import assurance_service
-                _run_coroutine(assurance_service.run_daily_post_decision_recheck())
-                _last_recheck_day = sim_now.date()
-            except Exception as ae:
-                logger.warning(f"Assurance recheck warning: {ae}")
+        _post_run_pool.submit(_post_run_tasks, sim_now)
 
     except Exception as e:
         logger.exception(f"Scheduler execution error: {e}")
         errors.append(str(e))
+    finally:
+        pool.shutdown(wait=True)
+        _run_cache.clear()
 
     finished_at = datetime.now(timezone.utc)
 
@@ -556,28 +646,35 @@ def resolve_cleared_alerts(sim_now: datetime) -> None:
         logger.error(f"Error in resolve_cleared_alerts: {e}")
 
 
+def _load_entities(entity_type: str, entity_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Load the monitored rows behind alerts, with region_id and institution_id filled in, keyed by id."""
+    ids = list({str(i) for i in entity_ids if i})
+    if not ids:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for start in range(0, len(ids), 100):
+        chunk = ids[start:start + 100]
+        if entity_type == "application_stage":
+            for row in _supabase.table("applications").select("*").in_("id", chunk).execute().data or []:
+                out[str(row["id"])] = row
+        elif entity_type in ("evc_scheduling", "evc_completion"):
+            for row in _supabase.table("evc_visits").select("*, applications(region_id, institution_id)").in_("id", chunk).execute().data or []:
+                meta = row.get("applications") or {}
+                row["region_id"], row["institution_id"] = meta.get("region_id"), meta.get("institution_id")
+                out[str(row["id"])] = row
+        else:
+            table = {"undertaking": "undertakings", "document": "documents"}.get(entity_type)
+            if not table:
+                return {}
+            for row in _supabase.table(table).select("*, institutions(region_id)").in_("id", chunk).execute().data or []:
+                row["region_id"] = (row.get("institutions") or {}).get("region_id")
+                out[str(row["id"])] = row
+    return out
+
+
 def _load_entity(entity_type: str, entity_id: str) -> Optional[Dict[str, Any]]:
-    """Load the monitored row behind an alert, with region_id and institution_id filled in."""
-    if entity_type == "application_stage":
-        res = _supabase.table("applications").select("*").eq("id", entity_id).limit(1).execute()
-        return res.data[0] if res.data else None
-    if entity_type in ("evc_scheduling", "evc_completion"):
-        res = _supabase.table("evc_visits").select("*, applications(region_id, institution_id)").eq("id", entity_id).limit(1).execute()
-        if not res.data:
-            return None
-        row = res.data[0]
-        meta = row.get("applications") or {}
-        row["region_id"], row["institution_id"] = meta.get("region_id"), meta.get("institution_id")
-        return row
-    table = {"undertaking": "undertakings", "document": "documents"}.get(entity_type)
-    if not table:
-        return None
-    res = _supabase.table(table).select("*, institutions(region_id)").eq("id", entity_id).limit(1).execute()
-    if not res.data:
-        return None
-    row = res.data[0]
-    row["region_id"] = (row.get("institutions") or {}).get("region_id")
-    return row
+    """Load the monitored row behind one alert."""
+    return _load_entities(entity_type, [entity_id]).get(str(entity_id))
 
 
 def reescalate_unacknowledged(sim_now: datetime) -> int:
@@ -592,8 +689,19 @@ def reescalate_unacknowledged(sim_now: datetime) -> int:
             .eq("status", "open") \
             .is_("acknowledged_at", "null").execute().data or []
 
+        # Skip alerts younger than the shortest timeout on any chain before loading anything
+        chains = _run_cache.get("chains") or [_DEFAULT_CHAIN]
+        min_timeout = timedelta(hours=min((c.get("ack_timeout_hours") or 48) for c in chains))
+        stale_alerts = [a for a in stale_alerts
+                        if (_parse_dt(a.get("fired_at")) or sim_now) <= sim_now - min_timeout]
+        by_type: Dict[str, List[str]] = {}
+        for a in stale_alerts:
+            by_type.setdefault(a["entity_type"], []).append(a["entity_id"])
+        entities = {t: _load_entities(t, ids) for t, ids in by_type.items()}
+
+        to_fire = []
         for alert in stale_alerts:
-            row = _load_entity(alert["entity_type"], alert["entity_id"])
+            row = entities.get(alert["entity_type"], {}).get(str(alert["entity_id"]))
             if not row:
                 continue
             chain = get_escalation_chain(alert["entity_type"], region_id=row.get("region_id"))
@@ -612,10 +720,18 @@ def reescalate_unacknowledged(sim_now: datetime) -> int:
                 f"[RE-ESCALATION LEVEL {next_level}] Level {alert.get('level')} alert was not acknowledged within "
                 f"{chain.get('ack_timeout_hours') or 48} hours. Escalated to {notify_role}."
             )
-            if fire_alert(alert["entity_type"], row, "escalation", next_level, "critical", msg, target_role=notify_role,
-                          channels=next_def.get("channels")):
-                reescalated_count += 1
+            to_fire.append((alert, row, next_level, msg, notify_role, next_def.get("channels")))
+
+        def fire(item) -> bool:
+            alert, row, next_level, msg, notify_role, channels = item
+            if fire_alert(alert["entity_type"], row, "escalation", next_level, "critical", msg,
+                          target_role=notify_role, channels=channels):
                 logger.warning(f"Re-escalated unacknowledged alert {alert['id']} to level {next_level}")
+                return True
+            return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="scheduler-reescalate") as pool:
+            reescalated_count = sum(pool.map(fire, to_fire))
     except Exception as e:
         logger.error(f"Error in reescalate_unacknowledged: {e}")
 

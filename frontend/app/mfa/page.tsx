@@ -63,7 +63,7 @@ function MfaContent() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    router.replace('/login');
+    window.location.replace('/login');
   }
 
   return (

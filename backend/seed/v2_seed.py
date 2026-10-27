@@ -46,6 +46,10 @@ EXTRA_PROFILE_FIELDS = {
     "evc2@demo.sih": {"phone": "+919800000006"},
     "evc3@demo.sih": {"phone": "+919800000007"},
     "sacshc@demo.sih": {"phone": "+919800000008"},
+    "mfa.officer@demo.sih": {"phone": "+919800000009"},
+    "admin@demo.sih": {"phone": "+919800000010"},
+    "admin2@demo.sih": {"phone": "+919800000011"},
+    "auditor@demo.sih": {"phone": "+919800000012"},
 }
 
 CHAIN_CHANNELS = {1: ["in_app", "email"], 2: ["in_app", "email", "sms"], 3: ["in_app", "email", "sms", "whatsapp"]}

@@ -34,6 +34,7 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,7 +79,8 @@ async def get_clock_public(user: AuthenticatedUser = Depends(get_current_user)):
     """Simulated date for the demo banner, readable by every signed-in user (§8.3)."""
     from core import clock
     offset = clock.get_offset_days()
-    return {"clock_now": clock.now().isoformat(), "offset_days": round(offset, 2), "is_simulated": abs(offset) > 0.0001}
+    return {"clock_now": clock.now().isoformat(), "offset_days": round(offset, 2), "is_simulated": abs(offset) > 0.0001,
+            "can_reset": user.role == "admin"}
 
 
 @app.get("/api/v1/me", tags=["Auth"])

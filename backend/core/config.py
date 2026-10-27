@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
@@ -7,6 +8,9 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = "dummy_secret_key_at_least_32_characters_long"
     RESEND_API_KEY: Optional[str] = None
     FRONTEND_ORIGIN: str = "http://localhost:3000"
+    # Extra origins allowed by CORS, as a regex, e.g. Vercel preview deployments:
+    # https://nirikshan-.*\.vercel\.app
+    CORS_ORIGIN_REGEX: Optional[str] = None
     SCHEDULER_ENABLED: bool = False
     DEMO_PASSWORD: str = "password123"
     PORT: int = 8000
@@ -42,6 +46,12 @@ class Settings(BaseSettings):
     # Login lockout (§15.8)
     LOGIN_MAX_FAILURES: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
+
+    @field_validator("FRONTEND_ORIGIN", "API_PUBLIC_URL")
+    @classmethod
+    def _no_trailing_slash(cls, v: str) -> str:
+        # Browsers send Origin without a trailing slash, and links are built as f"{base}/path"
+        return v.strip().rstrip("/")
 
     @property
     def mfa_enforced_emails(self) -> set:

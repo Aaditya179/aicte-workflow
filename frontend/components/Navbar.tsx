@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AlertBell from './AlertBell';
 import SimulatedDateBanner from './SimulatedDateBanner';
@@ -43,7 +43,6 @@ const NAV_LINKS: Record<string, NavLink[]> = {
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { lang, toggleLang, t } = useLanguage();
   const [mounted, setMounted] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -52,17 +51,19 @@ export default function Navbar() {
 
   useEffect(() => {
     setMounted(true);
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setUserEmail(user.email || null);
-        setUserRole(user.app_metadata?.role || user.user_metadata?.role || 'user');
-      }
+    // The navbar outlives page changes, so follow the session instead of reading it once
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user;
+      setUserEmail(user?.email || null);
+      setUserRole(user ? user.app_metadata?.role || user.user_metadata?.role || 'user' : null);
     });
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    // A full load drops everything kept for the old user: the bell's realtime channel, the date banner, page state
+    window.location.replace('/login');
   };
 
   // Don't render navbar on login, MFA or welcome page

@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { API_BASE_URL, fetchApi } from '@/lib/api';
 import {
@@ -125,7 +124,6 @@ const DEMO_ROLES: DemoRole[] = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('password123');
   const [showPassword, setShowPassword] = useState(false);
@@ -163,7 +161,8 @@ export default function LoginPage() {
       const requested = new URLSearchParams(window.location.search).get('next') || '';
       const next = requested.startsWith('/') && !requested.startsWith('//') ? requested : '/dashboard';
       const me = await fetchApi<{ mfa_required: boolean }>('/me');
-      router.push(me.data?.mfa_required ? `/mfa?next=${encodeURIComponent(next)}` : next);
+      // A full load, so nothing kept for a previous user in this tab carries over
+      window.location.assign(me.data?.mfa_required ? `/mfa?next=${encodeURIComponent(next)}` : next);
     } catch (err: any) {
       setErrorMessage(err.message || 'Login failed. Please check credentials or run the seed script.');
     } finally {

@@ -100,7 +100,7 @@ async def get_demo_case_timing(user: AuthenticatedUser = Depends(require_role(["
         return {"case": None, "alerts": []}
     case = rows[0]
     alerts = _supabase.table("alerts").select("id, kind, level, severity, status, target_role, fired_at") \
-        .eq("entity_type", "application").eq("entity_id", case["id"]).order("fired_at", desc=True).execute().data or []
+        .eq("entity_type", "application_stage").eq("entity_id", case["id"]).order("fired_at", desc=True).execute().data or []
     return {"case": {k: case[k] for k in ("application_no", "current_stage", "stage_entered_at", "due_at")}, "alerts": alerts}
 
 
@@ -140,10 +140,22 @@ async def advance_clock(
 
 @router.post("/clock/reset")
 async def reset_clock(user: AuthenticatedUser = Depends(require_role(["admin"]))):
-    """Reset simulated clock back to real-time UTC and trigger scheduler (§5.1)."""
+    """
+    Reset simulated clock back to real-time UTC and trigger scheduler (§5.1).
+    Alerts fired in the simulated future no longer make sense once time goes back, and they would
+    stop the same alerts firing again on the next jump, so they are removed with their
+    notifications. The audit trail keeps the record of the jump.
+    """
     before_time = clock.now().isoformat()
     clock.reset()
     reset_time = clock.now()
+
+    future = _supabase.table("alerts").select("id").gt("fired_at", reset_time.isoformat()).execute().data or []
+    future_ids = [a["id"] for a in future]
+    for start in range(0, len(future_ids), 100):
+        chunk = future_ids[start:start + 100]
+        _supabase.table("notifications").delete().in_("alert_id", chunk).execute()
+        _supabase.table("alerts").delete().in_("id", chunk).execute()
 
     run_result = scheduler.run_once()
 
@@ -153,7 +165,7 @@ async def reset_clock(user: AuthenticatedUser = Depends(require_role(["admin"]))
         entity_type="clock",
         entity_id=None,
         before={"simulated_time": before_time},
-        after={"simulated_time": reset_time.isoformat(), "offset_days": 0},
+        after={"simulated_time": reset_time.isoformat(), "offset_days": 0, "future_alerts_removed": len(future_ids)},
         reason="Admin reset clock to real UTC"
     )
 
@@ -161,6 +173,7 @@ async def reset_clock(user: AuthenticatedUser = Depends(require_role(["admin"]))
         "ok": True,
         "new_clock_now": reset_time.isoformat(),
         "offset_days": 0,
+        "future_alerts_removed": len(future_ids),
         "scheduler_run": run_result
     }
 

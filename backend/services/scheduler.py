@@ -592,7 +592,8 @@ def resolve_cleared_alerts(sim_now: datetime) -> None:
     """
     now_iso = sim_now.isoformat()
     try:
-        open_alerts = _supabase.table("alerts").select("id, entity_type, entity_id, fired_at") \
+        cols = "id, entity_type, entity_id, fired_at" + (", cycle" if _supports_alert_cycle() else "")
+        open_alerts = _supabase.table("alerts").select(cols) \
             .in_("status", ["open", "acknowledged"]).execute().data or []
         by_type: Dict[str, List[Dict[str, Any]]] = {}
         for a in open_alerts:
@@ -617,6 +618,8 @@ def resolve_cleared_alerts(sim_now: datetime) -> None:
             fired, entered = _parse_dt(a.get("fired_at")), _parse_dt(app.get("stage_entered_at"))
             if fired and entered and fired < entered:
                 to_resolve.append(a["id"])  # raised for a stage the application has since left
+            elif a.get("cycle") and a["cycle"] != _alert_cycle("application_stage", app):
+                to_resolve.append(a["id"])  # an earlier visit to this stage (entry times can be backdated)
 
         evc_alerts = by_type.get("evc_scheduling", []) + by_type.get("evc_completion", [])
         evcs = rows("evc_visits", list({a["entity_id"] for a in evc_alerts}), "id, status")

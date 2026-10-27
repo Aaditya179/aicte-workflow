@@ -24,7 +24,7 @@ Smart India Hackathon · Problem statement **SIH26262**
 
 Nirikshan takes an AICTE approval application from submission to final decision. It tracks every stage against its statutory deadline, warns the people responsible before a deadline is missed, escalates when it is, and records every action in a tamper-evident audit trail.
 
-**Full solution document:** [SOLUTION.md](SOLUTION.md) covers the problem statement, every feature in detail, the tech stack and the architecture.
+**Project report:** [PROJECT_REPORT.md](PROJECT_REPORT.md) covers the problem statement, objectives, design, every module in detail, the tech stack, testing and results, and future scope.
 
 ---
 
@@ -43,7 +43,7 @@ Every demo account uses the password `password123`, and the welcome and login pa
 
 ## Contents
 
-- [Solution document](SOLUTION.md)
+- [Project report](PROJECT_REPORT.md)
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
@@ -234,7 +234,7 @@ aicte-workflow/
 │   └── tests/                pytest suite
 ├── supabase/migrations/      Schema, row-level security, views, realtime
 ├── render.yaml               Render blueprint for the API
-├── SOLUTION.md               Problem, features, tech stack and architecture in detail
+├── PROJECT_REPORT.md         Project report: problem, design, implementation, testing
 └── docs/SPEC.md              Specification
 ```
 

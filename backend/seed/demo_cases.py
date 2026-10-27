@@ -43,25 +43,6 @@ def seed_scripted_cases():
     cases_created = {}
 
     # -------------------------------------------------------------
-    # CASE A: Healthy application in scrutiny, entered 3 days ago
-    # -------------------------------------------------------------
-    case_a_payload = {
-        "application_no": "DEMO-CASE-A",
-        "institution_id": inst_id,
-        "template_id": tmpl_scrutiny_id,
-        "application_type": "extension_of_approval",
-        "current_stage": "scrutiny",
-        "status": "in_progress",
-        "region_id": western_id,
-        "assigned_to": scrutiny_id,
-        "submitted_at": (now - timedelta(days=3)).isoformat(),
-        "stage_entered_at": (now - timedelta(days=3)).isoformat(),
-        "due_at": (now + timedelta(days=12)).isoformat(),
-    }
-    res_a = _supabase.table("applications").upsert(case_a_payload, on_conflict="application_no").execute()
-    cases_created["A"] = res_a.data[0] if res_a.data else None
-
-    # -------------------------------------------------------------
     # CASE B: Scrutiny entered 13 days ago, due in 2 days (Time-Travel case!)
     # -------------------------------------------------------------
     case_b_payload = {

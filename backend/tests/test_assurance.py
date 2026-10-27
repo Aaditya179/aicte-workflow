@@ -40,12 +40,12 @@ def regional_id(regional_token):
 
 @pytest.fixture(scope="module")
 def case_a():
-    return db.table("applications").select("*").eq("application_no", "DEMO-CASE-A").limit(1).execute().data[0]
+    return db.table("applications").select("*").eq("application_no", "DEMO-CASE-B").limit(1).execute().data[0]
 
 
 @pytest.fixture
 def decisions(case_a):
-    """Creates decisions on case A and deletes them (cascading to reports and flags) afterwards."""
+    """Creates decisions on case B and deletes them (cascading to reports and flags) afterwards."""
     created = []
 
     def make(status: str, stage_key: str = "test_stage", decided_by=None):

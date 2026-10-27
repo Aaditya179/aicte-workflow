@@ -169,7 +169,6 @@ Password for every account: `password123`.
 - **G:** a final decision with four kinds of assurance flag, including a lease and a land-use certificate that disagree on land area and survey number.
 - **H:** a committed decision whose lease expires in 10 days, so a +15 day jump raises a post-decision flag.
 - **I:** upload the sample lease and accept the suggested expiry date.
-- **J:** the scrutiny officer's next decision raises an anomaly flag.
 
 ---
 

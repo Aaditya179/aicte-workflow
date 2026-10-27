@@ -226,16 +226,9 @@ def seed_institutions(region_map):
         if inserted.data:
             primary_id = inserted.data[0]["id"]
 
-    # Seed additional sample institutions across regions
+    # Seed the other institution used by the demo cases (Case H and the SAC/SHC case)
     sample_colleges = [
-        ("Pune Engineering College", "1-PUN-002", "Maharashtra", "Pune", "Western"),
         ("Gujarat Institute of Science", "1-GUJ-003", "Gujarat", "Ahmedabad", "Western"),
-        ("Delhi National Institute", "1-DEL-004", "Delhi", "New Delhi", "Northern"),
-        ("Punjab Technical University Demo", "1-PUN-005", "Punjab", "Chandigarh", "North-Western"),
-        ("Bhopal Central Polytechnic", "1-BHO-006", "Madhya Pradesh", "Bhopal", "Central"),
-        ("Bangalore Institute of Advanced Tech", "1-BLR-007", "Karnataka", "Bengaluru", "South-Western"),
-        ("Chennai College of Engineering", "1-CHN-008", "Tamil Nadu", "Chennai", "Southern"),
-        ("Kolkata Institute of Technology", "1-KOL-009", "West Bengal", "Kolkata", "Eastern"),
     ]
     for name, aicte_id, state, city, reg_name in sample_colleges:
         reg_id = region_map.get(reg_name)

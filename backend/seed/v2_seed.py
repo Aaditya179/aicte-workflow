@@ -346,53 +346,18 @@ def seed_v2_cases():
     }).execute()
     created["H"] = app_h["application_no"]
 
-    # Case J: the scrutiny officer has 3 overrides in the last 30 days, so the next decision raises an anomaly
-    inst_j = _institution("Pune Engineering College", "1-PUN-002", "Pune", region_id)
-    app_j = _reset_application("DEMO-CASE-J", {
-        "application_no": "DEMO-CASE-J", "institution_id": inst_j["id"], "template_id": templates["ONLY_SCRUTINY"],
-        "application_type": "extension_of_approval", "current_stage": "re_scrutiny", "status": "in_progress",
-        "region_id": region_id, "assigned_to": scrutiny["user_id"] if scrutiny else None,
-        "submitted_at": (now - timedelta(days=40)).isoformat(),
-        "stage_entered_at": (now - timedelta(days=5)).isoformat(), "due_at": (now + timedelta(days=5)).isoformat(),
-    })
-    _document(inst_j["id"], "Application Form (Case J)", application_id=app_j["id"], doc_type="application_form",
-              status="verified", metadata={"institution_name": inst_j["name"]})
-    if scrutiny:
-        prior_at = (now - timedelta(days=14)).isoformat()
-        dec_j = _supabase.table("decisions").insert({
-            "application_id": app_j["id"], "stage_key": "scrutiny", "outcome": "return", "status": "committed",
-            "decided_by": scrutiny["user_id"], "decided_at": prior_at, "remarks": "Returned for deficiencies.",
-        }).execute().data[0]
-        rep_j = _supabase.table("assurance_reports").insert({
-            "decision_id": dec_j["id"], "kind": "pre", "generated_at": prior_at, "passed": 4, "flagged": 3,
-            "checks": [{"check": "freshness", "result": "flagged", "detail": "Seeded history for Case J"}],
-        }).execute().data[0]
-        _supabase.table("assurance_flags").insert([
-            {"report_id": rep_j["id"], "decision_id": dec_j["id"], "check_type": check, "severity": "warning",
-             "message": msg, "status": "overridden", "responded_by": scrutiny["user_id"],
-             "responded_at": (now - timedelta(days=days)).isoformat(), "reason": reason}
-            for check, msg, days, reason in (
-                ("freshness", "Fire NOC expired before the decision", 12, "Renewal receipt seen in the physical file"),
-                ("consistency", "Lease metadata names a different trust", 9, "Trust renamed in 2024, deed not yet updated"),
-                ("completeness", "Building plan approval missing", 6, "Submitted in the previous cycle"),
-            )
-        ]).execute()
-    created["J"] = app_j["application_no"]
-
-    # SAC/SHC member: a few cases at the SAC/SHC stage assigned to them
+    # SAC/SHC member: a case at the SAC/SHC stage assigned to them
     if sacshc and "EVC_SAC_SHC" in templates:
-        for n, (inst_name, aicte_id, city) in enumerate((("Gujarat Institute of Science", "1-GUJ-003", "Ahmedabad"),
-                                                         ("Pune Engineering College", "1-PUN-002", "Pune")), start=1):
-            inst = _institution(inst_name, aicte_id, city, region_id)
-            _reset_application(f"DEMO-SACSHC-{n}", {
-                "application_no": f"DEMO-SACSHC-{n}", "institution_id": inst["id"], "template_id": templates["EVC_SAC_SHC"],
-                "application_type": "new_institution", "current_stage": "sac_shc", "status": "in_progress",
-                "region_id": region_id, "assigned_to": sacshc["user_id"],
-                "submitted_at": (now - timedelta(days=60 + n)).isoformat(),
-                "stage_entered_at": (now - timedelta(days=4 * n)).isoformat(),
-                "due_at": (now + timedelta(days=20 - 4 * n)).isoformat(),
-            })
-        created["SAC/SHC"] = ["DEMO-SACSHC-1", "DEMO-SACSHC-2"]
+        inst = _institution("Gujarat Institute of Science", "1-GUJ-003", "Ahmedabad", region_id)
+        _reset_application("DEMO-SACSHC-1", {
+            "application_no": "DEMO-SACSHC-1", "institution_id": inst["id"], "template_id": templates["EVC_SAC_SHC"],
+            "application_type": "new_institution", "current_stage": "sac_shc", "status": "in_progress",
+            "region_id": region_id, "assigned_to": sacshc["user_id"],
+            "submitted_at": (now - timedelta(days=61)).isoformat(),
+            "stage_entered_at": (now - timedelta(days=4)).isoformat(),
+            "due_at": (now + timedelta(days=16)).isoformat(),
+        })
+        created["SAC/SHC"] = ["DEMO-SACSHC-1"]
 
     # Case I: the institution uploads seed/data/sample_lease.png and OCR suggests the date. Its land-use
     # certificate is written differently (hectares, "S. No. 112-3") but agrees with the sample lease.

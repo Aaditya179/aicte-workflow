@@ -101,9 +101,32 @@ class TestAssuranceCases:
         alerts = db.table("alerts").select("id").eq("entity_type", "decision").eq("entity_id", dec["id"]).execute().data
         assert alerts
 
-    def test_case_j_anomaly_flag(self, tokens):
-        data = _draft(tokens["scrutiny"], "DEMO-CASE-J", "re_scrutiny")
-        assert any(f["check_type"] == "anomaly" and "overrides" in f["message"] for f in data["flags"]), data["flags"]
+    def test_repeated_overrides_raise_anomaly_flag(self, tokens):
+        # Three overrides by the scrutiny officer in the last 30 days; their next decision is flagged
+        app = _app("DEMO-CASE-B")
+        officer = db.table("profiles").select("user_id").eq("role", "scrutiny_officer") \
+            .eq("region_id", app["region_id"]).limit(1).execute().data[0]["user_id"]
+        before = {d["id"] for d in db.table("decisions").select("id").eq("application_id", app["id"]).execute().data}
+        past = clock.now().isoformat()
+        prior = db.table("decisions").insert({
+            "application_id": app["id"], "stage_key": "scrutiny", "outcome": "return", "status": "committed",
+            "decided_by": officer, "decided_at": past, "remarks": "Anomaly test history",
+        }).execute().data[0]
+        try:
+            rep = db.table("assurance_reports").insert({
+                "decision_id": prior["id"], "kind": "pre", "generated_at": past, "passed": 0, "flagged": 3, "checks": [],
+            }).execute().data[0]
+            db.table("assurance_flags").insert([
+                {"report_id": rep["id"], "decision_id": prior["id"], "check_type": "freshness", "severity": "warning",
+                 "message": "Anomaly test", "status": "overridden", "responded_by": officer, "responded_at": past,
+                 "reason": "Anomaly test override"} for _ in range(3)
+            ]).execute()
+            data = _draft(tokens["scrutiny"], "DEMO-CASE-B", "scrutiny")
+            assert any(f["check_type"] == "anomaly" and "overrides" in f["message"] for f in data["flags"]), data["flags"]
+        finally:
+            after = {d["id"] for d in db.table("decisions").select("id").eq("application_id", app["id"]).execute().data}
+            for dec_id in after - before:
+                db.table("decisions").delete().eq("id", dec_id).execute()
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +256,7 @@ class TestEvcSuggestions:
         # Book the first suggested member elsewhere on that day; the day must no longer use them
         first = data["suggestions"][0]
         member = first["members"][0]["user_id"]
-        other_app = _app("DEMO-CASE-A")["id"]
+        other_app = _app("DEMO-CASE-B")["id"]
         tmp = db.table("evc_visits").insert({
             "application_id": other_app, "status": "scheduled", "queued_at": clock.now().isoformat(),
             "scheduling_due_at": clock.now().isoformat(), "scheduled_for": f"{first['date']}T10:00:00+00:00",
@@ -253,7 +276,7 @@ class TestEvcSuggestions:
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def test_alert():
-    app_id = _app("DEMO-CASE-A")["id"]
+    app_id = _app("DEMO-CASE-B")["id"]
     alert = db.table("alerts").insert({
         "entity_type": "application_stage", "entity_id": app_id, "kind": "escalation", "level": 3,
         "severity": "critical", "message": "v2 channel test", "status": "resolved",
@@ -271,11 +294,11 @@ def _bureau_id():
 class TestChannels:
     def test_level_3_creates_row_per_channel(self, test_alert):
         rows = notifier.dispatch_alert([_bureau_id()], "Escalation", "msg", test_alert["id"], "critical",
-                                       channels=["in_app", "email", "sms", "whatsapp"], kind="escalation", reference_no="DEMO-CASE-A")
+                                       channels=["in_app", "email", "sms", "whatsapp"], kind="escalation", reference_no="DEMO-CASE-B")
         assert sorted(r["channel"] for r in rows) == ["email", "in_app", "sms", "whatsapp"]
         external = [r for r in rows if r["channel"] != "in_app"]
         # Safe content: only the reference, alert type and link (§15.0)
-        assert all("msg" not in (r["body"] or "") and "DEMO-CASE-A" in r["body"] for r in external)
+        assert all("msg" not in (r["body"] or "") and "DEMO-CASE-B" in r["body"] for r in external)
         assert all(r["delivery_status"] in ("sent", "delivered") for r in rows)
 
     def test_failed_critical_delivery_falls_back(self, test_alert, monkeypatch):

@@ -52,14 +52,22 @@ def notify_users(
     user_ids: List[str],
     title: str,
     body: Optional[str] = None,
-    alert_id: Optional[str] = None
+    alert_id: Optional[str] = None,
+    severity: Optional[str] = None
 ) -> List[dict]:
-    """Batch send in-app notifications to multiple users."""
+    """
+    Batch send notifications to multiple users.
+    1. Inserts in-app notification for each user.
+    2. Sends email via Resend with signed 1-click acknowledge link for warning & critical alerts (Section 5.5).
+    """
     if not user_ids:
         return []
     results = []
     now_iso = clock.now().isoformat()
-    rows = [
+    unique_uids = list(set(user_ids))
+
+    # In-app rows
+    in_app_rows = [
         {
             "user_id": uid,
             "alert_id": alert_id,
@@ -69,19 +77,50 @@ def notify_users(
             "status": "sent",
             "sent_at": now_iso,
         }
-        for uid in set(user_ids)
+        for uid in unique_uids
     ]
     try:
-        res = _supabase.table("notifications").insert(rows).execute()
-        return res.data or []
+        res = _supabase.table("notifications").insert(in_app_rows).execute()
+        results.extend(res.data or [])
     except Exception as e:
-        logger.error(f"Batch notification failure: {e}")
-        # Fall back to single sends
-        for row in rows:
+        logger.error(f"Batch in-app notification failure: {e}")
+        for row in in_app_rows:
             try:
                 r = _supabase.table("notifications").insert(row).execute()
                 if r.data:
                     results.append(r.data[0])
             except Exception:
                 pass
-        return results
+
+    # Email dispatch for warning and critical alerts (Section 5.5, Phase 6)
+    if alert_id and severity in ("warning", "critical"):
+        try:
+            from services import email as email_service
+            # Fetch profile emails
+            prof_res = _supabase.table("profiles").select("user_id, email, full_name").in_("user_id", unique_uids).execute()
+            for prof in (prof_res.data or []):
+                user_email = prof.get("email")
+                uid = prof.get("user_id")
+                if user_email and uid:
+                    email_service.send_alert_email(
+                        user_email=user_email,
+                        user_id=uid,
+                        alert_id=alert_id,
+                        severity=severity,
+                        title=title,
+                        message=body or title
+                    )
+                    # Record email notification entry
+                    _supabase.table("notifications").insert({
+                        "user_id": uid,
+                        "alert_id": alert_id,
+                        "channel": "email",
+                        "title": title,
+                        "body": body,
+                        "status": "sent",
+                        "sent_at": now_iso
+                    }).execute()
+        except Exception as e:
+            logger.error(f"Failed to dispatch alert emails: {e}")
+
+    return results

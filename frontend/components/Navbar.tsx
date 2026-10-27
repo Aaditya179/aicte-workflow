@@ -54,6 +54,16 @@ export default function Navbar() {
               {/* Nav Links */}
               <nav className="hidden lg:flex items-center gap-1">
                 <Link
+                  href="/dashboard"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    pathname === '/dashboard'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Dashboard
+                </Link>
+                <Link
                   href="/applications"
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                     pathname?.startsWith('/applications')
@@ -102,6 +112,16 @@ export default function Navbar() {
                   }`}
                 >
                   Alerts
+                </Link>
+                <Link
+                  href="/reports"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    pathname?.startsWith('/reports')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Reports
                 </Link>
                 {(userRole === 'admin' || userRole === 'bureau_officer') && (
                   <Link

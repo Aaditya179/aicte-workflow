@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.security import get_current_user, AuthenticatedUser
 from contextlib import asynccontextmanager
-from routers import demo, applications, audit, alerts, notifications, admin, evc, undertakings, documents
+from routers import demo, applications, audit, alerts, notifications, admin, evc, undertakings, documents, dashboards, reports
 from services import scheduler
 
 @asynccontextmanager
@@ -45,6 +45,8 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(evc.router, prefix="/api/v1")
 app.include_router(undertakings.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
+app.include_router(dashboards.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"])
 async def health_check():

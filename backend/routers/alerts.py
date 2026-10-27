@@ -123,3 +123,62 @@ async def acknowledge_alert(
     )
 
     return updated
+
+
+class AlertSignedAckRequest(BaseModel):
+    alert_id: str
+    user_id: str
+    exp: int
+    sig: str
+    notes: Optional[str] = "1-click email acknowledgment"
+
+
+@router.post("/ack-by-token")
+async def acknowledge_alert_by_token(req: AlertSignedAckRequest):
+    """
+    Public 1-click acknowledge endpoint via cryptographically signed link (Section 5.5, Phase 6).
+    Validates HMAC-SHA256 signature and expiration without requiring user re-authentication.
+    """
+    from services import email as email_service
+    is_valid = email_service.verify_ack_signature(req.alert_id, req.user_id, req.exp, req.sig)
+    if not is_valid:
+        raise HTTPException(status_code=403, detail="Invalid or expired acknowledgment signature")
+
+    alert_res = _supabase.table("alerts").select("*").eq("id", req.alert_id).limit(1).execute()
+    if not alert_res.data:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert = alert_res.data[0]
+
+    if alert.get("status") == "acknowledged":
+        return {"ok": True, "alert": alert, "already_acknowledged": True}
+
+    now_iso = clock.now().isoformat()
+    # Check if user_id exists in profiles
+    prof = _supabase.table("profiles").select("user_id, role, full_name, email").eq("user_id", req.user_id).limit(1).execute()
+    ack_user_id = req.user_id if prof.data else None
+
+    update_data = {
+        "status": "acknowledged",
+        "acknowledged_by": ack_user_id,
+        "acknowledged_at": now_iso
+    }
+    res = _supabase.table("alerts").update(update_data).eq("id", req.alert_id).execute()
+    updated = res.data[0] if res.data else None
+
+    user_role = prof.data[0]["role"] if prof.data else "officer"
+
+    class TokenActor:
+        id = req.user_id
+        role = user_role
+
+    audit_service.record(
+        actor=TokenActor(),
+        action="ALERT_ACKNOWLEDGED_VIA_EMAIL",
+        entity_type="alert",
+        entity_id=req.alert_id,
+        before=alert,
+        after=updated,
+        reason=req.notes or "1-click verified email link acknowledgment"
+    )
+
+    return {"ok": True, "alert": updated}

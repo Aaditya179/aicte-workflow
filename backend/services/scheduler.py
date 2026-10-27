@@ -217,7 +217,8 @@ def fire_alert(
                 user_ids=targets,
                 title=title,
                 body=message,
-                alert_id=created_alert["id"]
+                alert_id=created_alert["id"],
+                severity=severity
             )
 
         return created_alert

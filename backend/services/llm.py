@@ -304,8 +304,11 @@ OCR_SCHEMA = {
         "evidence_text": {"type": "string", "description": "The exact line where the date was found, or empty"},
         "institution_name": {"type": "string", "description": "Lessee or institution name as printed, or empty"},
         "land_area": {"type": "string", "description": "Land area as printed, with units, or empty"},
+        "survey_number": {"type": "string", "description": "Survey, gat, khasra or CTS number as printed, or empty"},
+        "start_date": {"type": "string", "description": "YYYY-MM-DD the lease or validity starts, or empty"},
     },
-    "required": ["expiry_date", "confidence", "evidence_text", "institution_name", "land_area"],
+    "required": ["expiry_date", "confidence", "evidence_text", "institution_name", "land_area",
+                 "survey_number", "start_date"],
     "additionalProperties": False,
 }
 
@@ -313,8 +316,9 @@ OCR_SYSTEM = (
     "You read scanned validity documents (leases, NOCs, certificates) for AICTE. Find the date the document "
     "expires or is valid until. Copy the line containing it verbatim as evidence_text. If there is no "
     "clearly printed expiry or validity end date, return an empty expiry_date and confidence 0. Never infer "
-    "an expiry date from a start date and a duration unless the end date is printed. Also copy the "
-    "institution or lessee name and land area if printed."
+    "an expiry date from a start date and a duration unless the end date is printed. Also copy, exactly "
+    "as printed, the institution or lessee name, the land area with its unit, the survey (gat, khasra or "
+    "CTS) number, and the commencement or start date. Leave any field empty when it is not printed."
 )
 
 
@@ -362,7 +366,8 @@ def _mock_ocr(file_bytes: bytes, media_type: str) -> Dict[str, Any]:
     Without a model, only the seeded sample lease can be read: it carries its printed fields as
     PNG text chunks. Anything else returns no date, which the UI shows as 'enter it manually'.
     """
-    empty = {"expiry_date": "", "confidence": 0.0, "evidence_text": "", "institution_name": "", "land_area": ""}
+    empty = {"expiry_date": "", "confidence": 0.0, "evidence_text": "", "institution_name": "", "land_area": "",
+             "survey_number": "", "start_date": ""}
     if media_type != "image/png":
         return empty
     try:
@@ -378,4 +383,6 @@ def _mock_ocr(file_bytes: bytes, media_type: str) -> Dict[str, Any]:
         "evidence_text": info.get("evidence_text", ""),
         "institution_name": info.get("institution_name", ""),
         "land_area": info.get("land_area", ""),
+        "survey_number": info.get("survey_number", ""),
+        "start_date": info.get("start_date", ""),
     }

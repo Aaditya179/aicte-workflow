@@ -307,7 +307,7 @@ def _run_ocr(doc: Dict[str, Any], content: bytes, media_type: str) -> Dict[str, 
         "message": None if readable else "Could not read the date, enter it manually",
     }
     # Extracted fields feed the consistency check in Decision Assurance
-    for key in ("institution_name", "land_area"):
+    for key in ("institution_name", "land_area", "survey_number", "start_date"):
         if result.get(key):
             metadata[key] = result[key]
     update = {"metadata": metadata, "ocr_status": "suggested" if readable else "none",

@@ -7,14 +7,14 @@ Advisory only — never blocks an officer from recording a decision, but require
 gets an acknowledged response or an override with an audited reason before commit.
 """
 from datetime import datetime, timezone, date, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import json
 import logging
 
 from core.db import db
 from core import clock
 from adapters.mock import mock_adapter
-from services import audit
+from services import audit, doc_fields
 from core.security import AuthenticatedUser
 
 
@@ -41,6 +41,84 @@ def _audit_actor(user_id: str, actor: Optional[AuthenticatedUser]) -> Authentica
         return actor
     prof = db.fetch_one("profiles", user_id=user_id) or {}
     return AuthenticatedUser(id=user_id, role=prof.get("role") or "unknown", full_name=prof.get("full_name"))
+
+
+def _meta(doc: Dict[str, Any]) -> Dict[str, Any]:
+    meta = doc.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            meta = {}
+    return meta
+
+
+def _doc_label(doc: Dict[str, Any]) -> str:
+    return doc.get("title") or (doc.get("doc_type") or "document").replace("_", " ")
+
+
+def _date(val: Any) -> Optional[date]:
+    try:
+        return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _consistency_flags(docs: List[Dict[str, Any]], inst: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Compare what the documents say (fields read by OCR, or recorded at registration) with each
+    other and with the institution record. Returns the flags, and a note of what agreed.
+    """
+    flags: List[Dict[str, Any]] = []
+    compared: List[str] = []
+
+    def flag(doc: Dict[str, Any], message: str, severity: str = "warning") -> None:
+        flags.append({"check_type": "consistency", "severity": severity, "message": message,
+                      "entity_type": "documents", "entity_id": doc.get("id")})
+
+    # Institution or lessee name against the institution record
+    named = [(d, _meta(d).get("institution_name")) for d in docs if _meta(d).get("institution_name")]
+    for d, printed in named:
+        if doc_fields.names_match(printed, inst.get("name")) is False:
+            flag(d, f"'{_doc_label(d)}' names '{printed}', but the institution is '{inst.get('name')}'")
+    if named:
+        compared.append(f"institution name checked on {len(named)} document(s)")
+
+    # Land area across documents; the lease is the reference when there is one
+    areas = [(d, _meta(d)["land_area"], doc_fields.area_sq_m(_meta(d).get("land_area")))
+             for d in docs if _meta(d).get("land_area")]
+    areas = [a for a in areas if a[2]]
+    areas.sort(key=lambda a: a[0].get("doc_type") != "lease")
+    if len(areas) >= 2:
+        ref_doc, ref_text, ref_sq_m = areas[0]
+        for d, text, sq_m in areas[1:]:
+            if not doc_fields.areas_match(ref_sq_m, sq_m):
+                flag(d, f"Land area differs: '{_doc_label(ref_doc)}' says {ref_text}, '{_doc_label(d)}' says "
+                        f"{text} (about {sq_m / 4046.8564224:.2f} acres against {ref_sq_m / 4046.8564224:.2f})")
+        compared.append(f"land area compared across {len(areas)} document(s)")
+
+    # Survey number across documents
+    surveys = [(d, _meta(d)["survey_number"], doc_fields.survey_number(_meta(d).get("survey_number")))
+               for d in docs if _meta(d).get("survey_number")]
+    surveys = [s for s in surveys if s[2]]
+    if len({s[2] for s in surveys}) > 1:
+        listed = ", ".join(f"'{_doc_label(d)}': {text}" for d, text, _ in surveys)
+        flag(surveys[-1][0], f"Survey numbers differ between documents ({listed})")
+    elif len(surveys) >= 2:
+        compared.append(f"survey number agrees across {len(surveys)} document(s)")
+
+    for d in docs:
+        meta = _meta(d)
+        start, until = _date(meta.get("start_date")), _date(d.get("valid_until"))
+        if start and until and start > until:
+            flag(d, f"'{_doc_label(d)}' starts on {start.isoformat()}, after its expiry on {until.isoformat()}")
+        # A date typed by hand that differs from the one printed on the document
+        printed = _date(d.get("ocr_suggested_expiry"))
+        if d.get("ocr_status") == "edited" and printed and until and printed != until:
+            flag(d, f"'{_doc_label(d)}' expiry was entered by hand as {until.isoformat()}, "
+                    f"but the document reads {printed.isoformat()}")
+
+    return flags, compared
 
 
 class AssuranceService:
@@ -172,39 +250,20 @@ class AssuranceService:
                 "detail": "All mandatory documents for this stage are verified and present"
             })
 
-        # Check 4: Metadata Consistency
-        inconsistent_docs = []
-        inst_name = (inst.get("name") or "").strip().lower()
-        for doc in all_docs:
-            meta = doc.get("metadata") or {}
-            if isinstance(meta, str):
-                try:
-                    meta = json.loads(meta)
-                except Exception:
-                    meta = {}
-            doc_inst = (meta.get("institution_name") or "").strip().lower()
-            if doc_inst and inst_name and doc_inst != inst_name:
-                inconsistent_docs.append((doc, meta.get("institution_name")))
-
-        if inconsistent_docs:
-            for d, wrong_name in inconsistent_docs:
-                flags.append({
-                    "check_type": "consistency",
-                    "severity": "warning",
-                    "message": f"Document metadata institution '{wrong_name}' does not match '{inst.get('name')}'",
-                    "entity_type": "documents",
-                    "entity_id": d.get("id")
-                })
+        # Check 4: Consistency of the fields read from the documents
+        consistency_flags, compared = _consistency_flags(all_docs, inst)
+        flags.extend(consistency_flags)
+        if consistency_flags:
             checks_results.append({
                 "check": "consistency",
                 "result": "flagged",
-                "detail": f"Metadata mismatch detected in {len(inconsistent_docs)} document(s)"
+                "detail": f"{len(consistency_flags)} disagreement(s) between documents and the institution record"
             })
         else:
             checks_results.append({
                 "check": "consistency",
                 "result": "passed",
-                "detail": "Document metadata aligns with institution record"
+                "detail": "; ".join(compared) if compared else "No fields read from the documents to compare"
             })
 
         # Check 5: Source Verification (Central AICTE adapter)

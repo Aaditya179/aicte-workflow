@@ -198,6 +198,7 @@ def make_sample_lease(path: Path = SAMPLE_LEASE) -> Path:
         ("Lessor: Maharashtra Industrial Land Trust", font),
         ("Lessee: Demo Institute of Technology", font),
         ("Premises: Plot 14, Sector 7, Navi Mumbai, Maharashtra", font),
+        ("Survey No. 112/3, Village Ghansoli", font),
         ("Land area: 10.5 acres", font),
         ("", font),
         ("Commencement: 1 April 2023", font),
@@ -219,6 +220,8 @@ def make_sample_lease(path: Path = SAMPLE_LEASE) -> Path:
     info.add_text("evidence_text", evidence)
     info.add_text("institution_name", "Demo Institute of Technology")
     info.add_text("land_area", "10.5 acres")
+    info.add_text("survey_number", "Survey No. 112/3")
+    info.add_text("start_date", "2023-04-01")
     img.save(path, pnginfo=info)
 
     # Judges download the same file from the frontend
@@ -300,7 +303,12 @@ def seed_v2_cases():
     })
     _document(inst_g["id"], "Campus Lease Deed (Case G)", application_id=app_g["id"], doc_type="lease", status="verified",
               valid_from=(today - timedelta(days=370)).isoformat(), valid_until=(today - timedelta(days=5)).isoformat(),
-              metadata={"institution_name": "Eastern Valley Institute of Technology", "land_area": "8 acres"})
+              metadata={"institution_name": "Eastern Valley Institute of Technology", "land_area": "8 acres",
+                        "survey_number": "Survey No. 45/2", "start_date": (today - timedelta(days=370)).isoformat()})
+    # Read from a second document: the land area and survey number disagree with the lease
+    _document(inst_g["id"], "Land Use Certificate (Case G)", application_id=app_g["id"], doc_type="other",
+              status="verified", metadata={"institution_name": inst_g["name"], "land_area": "4.05 hectares",
+                                           "survey_number": "S. No. 54-2"})
     _document(inst_g["id"], "Application Form (Case G)", application_id=app_g["id"], doc_type="application_form",
               status="verified", metadata={"institution_name": inst_g["name"]})
     created["G"] = app_g["application_no"]
@@ -386,7 +394,13 @@ def seed_v2_cases():
             })
         created["SAC/SHC"] = ["DEMO-SACSHC-1", "DEMO-SACSHC-2"]
 
-    # Case I needs no rows: the institution uploads seed/data/sample_lease.png and OCR suggests the date
+    # Case I: the institution uploads seed/data/sample_lease.png and OCR suggests the date. Its land-use
+    # certificate is written differently (hectares, "S. No. 112-3") but agrees with the sample lease.
+    demo_inst = _one("institutions", name="Demo Institute of Technology")
+    if demo_inst:
+        _document(demo_inst["id"], "Land Use Certificate", doc_type="other", status="verified",
+                  metadata={"institution_name": "Demo Inst. of Tech.", "land_area": "4.25 hectares",
+                            "survey_number": "S. No. 112-3"})
     created["I"] = f"Upload {SAMPLE_LEASE.name} as the institution (also at /samples/sample_lease.png)"
     seed_evc_availability()
     print("Cases G, H, I, J and SAC/SHC assignments seeded.")

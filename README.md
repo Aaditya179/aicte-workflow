@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/nirikshan-header-logo.png" alt="Nirikshan" width="420" />
+<img src="frontend/public/nirikshan-banner.png" alt="Nirikshan" width="500" />
 
 ### AICTE approval workflow, SLA monitoring and compliance governance
 

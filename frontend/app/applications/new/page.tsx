@@ -78,10 +78,10 @@ function YesNo({ name, question, value, onChange }: {
 export default function NewApplicationPage() {
   const router = useRouter();
   const { me } = useMe();
-  const years = academicYears();
+  const [years, setYears] = useState<string[]>([]);
   const [institution, setInstitution] = useState<Institution | null>(null);
   const [type, setType] = useState<AppType>('extension_of_approval');
-  const [year, setYear] = useState(years[0]);
+  const [year, setYear] = useState('');
   const [details, setDetails] = useState<Details>({});
   const [declared, setDeclared] = useState(false);
   const [preview, setPreview] = useState<RoutePreview | null>(null);
@@ -97,6 +97,10 @@ export default function NewApplicationPage() {
     if (!isInstitution) return;
     fetchApi<{ institution: Institution }>('/dashboard/institution').then(({ data }) => {
       if (data) setInstitution(data.institution);
+      // Worked out after the first render: the date is not known when the page is prerendered
+      const ys = academicYears();
+      setYears(ys);
+      setYear((y) => y || ys[0]);
     });
   }, [isInstitution]);
 
@@ -304,7 +308,7 @@ export default function NewApplicationPage() {
                 </span>
               </label>
               {error && <Notice kind="error">{error}</Notice>}
-              <button type="submit" className={btnPrimary} disabled={busy || !declared || !preview}>
+              <button type="submit" className={btnPrimary} disabled={busy || !declared || !preview || !year}>
                 {busy ? 'Submitting…' : 'Submit application'}
               </button>
             </section>

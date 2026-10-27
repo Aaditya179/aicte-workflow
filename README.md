@@ -1,10 +1,10 @@
-# ApprovalTrack (SIH26262)
+# Nirikshan (SIH26262)
 
 > **AICTE Workflow Automation, SLA Monitoring & Statutory Governance Platform**
 > 
 > *Advisory only — final decisions rest with the competent authority. Designed to align with the Digital Personal Data Protection Act, 2023.*
 
-ApprovalTrack provides end-to-end statutory workflow automation, real-time SLA countdowns, multi-channel escalation before pendency breaches occur, and a tamper-evident cryptographic audit log for all AICTE approval stages.
+Nirikshan provides end-to-end statutory workflow automation, real-time SLA countdowns, multi-channel escalation before pendency breaches occur, and a tamper-evident cryptographic audit log for all AICTE approval stages.
 
 ---
 
@@ -12,7 +12,7 @@ ApprovalTrack provides end-to-end statutory workflow automation, real-time SLA c
 
 ```mermaid
 graph TD
-  User([Browser / Mobile Client]) -->|Next.js App Router| Frontend[Frontend: ApprovalTrack Next.js]
+  User([Browser / Mobile Client]) -->|Next.js App Router| Frontend[Frontend: Nirikshan Next.js]
   Frontend -->|REST API / Bearer JWT| FastAPI[Backend: FastAPI Service]
   Frontend -->|Auth / Realtime / Signed Storage| Supabase[(Supabase Platform)]
   

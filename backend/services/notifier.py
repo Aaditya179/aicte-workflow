@@ -37,12 +37,12 @@ KIND_TEMPLATE = {
 # Used when no message_templates row matches; same placeholders as the seeded rows
 _FALLBACK_TEMPLATES = {
     "en": {
-        "subject": "ApprovalTrack {{alert_type}}: {{reference_no}}",
-        "body": "ApprovalTrack {{alert_type}} for reference {{reference_no}}. Sign in to view details: {{link}}",
+        "subject": "Nirikshan {{alert_type}}: {{reference_no}}",
+        "body": "Nirikshan {{alert_type}} for reference {{reference_no}}. Sign in to view details: {{link}}",
     },
     "hi": {
-        "subject": "ApprovalTrack {{alert_type}}: {{reference_no}}",
-        "body": "ApprovalTrack: संदर्भ {{reference_no}} के लिए {{alert_type}}। विवरण देखने के लिए साइन इन करें: {{link}}",
+        "subject": "Nirikshan {{alert_type}}: {{reference_no}}",
+        "body": "Nirikshan: संदर्भ {{reference_no}} के लिए {{alert_type}}। विवरण देखने के लिए साइन इन करें: {{link}}",
     },
 }
 
@@ -128,7 +128,7 @@ def send_channel(channel: str, recipient: Dict[str, Any], subject: Optional[str]
         if not email_service.is_configured():
             return _simulated(channel, recipient["email"], subject, body)
         result = email_service.send_email(
-            to_email=recipient["email"], subject=subject or "ApprovalTrack notice",
+            to_email=recipient["email"], subject=subject or "Nirikshan notice",
             html_content=email_service.notice_html(subject or "", body, link), text_content=body,
         )
         if result.get("status") in ("failed", "error") or not result.get("id"):

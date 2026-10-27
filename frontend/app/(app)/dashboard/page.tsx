@@ -177,7 +177,7 @@ function DashboardContent() {
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FBF0E4] border border-[#F0D5BE] text-xs font-semibold mb-3 text-[#C25E26]">
             <Sparkles className="w-3.5 h-3.5 text-[#C25E26]" />
-            AICTE National SLA Monitoring Portal
+            Nirikshan • AICTE National SLA Monitoring Portal
           </div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1C1917]">
             Welcome, {userName}

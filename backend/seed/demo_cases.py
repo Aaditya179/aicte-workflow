@@ -1,6 +1,6 @@
 """
 Scripted demo cases (Section 9 of the spec).
-Seeds Cases A through F relative to clock.now().
+Seeds Cases A through F, then G to J (§15.9), relative to clock.now().
 """
 from datetime import timedelta
 import sys
@@ -188,6 +188,9 @@ def seed_scripted_cases():
     cases_created["F"] = res_f.data[0] if res_f.data else None
 
     print("Scripted cases A through F successfully initialized.")
+
+    from seed.v2_seed import seed_v2_cases
+    cases_created.update(seed_v2_cases())
     return cases_created
 
 

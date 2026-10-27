@@ -69,7 +69,7 @@ def send_email(
                 "Content-Type": "application/json"
             },
             json={
-                "from": "ApprovalTrack <onboarding@resend.dev>",
+                "from": "Nirikshan <onboarding@resend.dev>",
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content,
@@ -99,9 +99,9 @@ def notice_html(subject: str, body: str, link: str) -> str:
     <!DOCTYPE html>
     <html>
     <head><meta charset="utf-8"></head>
-    <body style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background:#f6f8fb; margin:0; padding:24px; color:#14213d;">
-      <div style="max-width:560px; margin:0 auto; background:#ffffff; border:1px solid #dfe5ee; border-radius:12px; overflow:hidden;">
-        <div style="background:#14213d; color:#ffffff; padding:18px 24px; font-weight:700;">ApprovalTrack</div>
+    <body style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background:#FAF7F2; margin:0; padding:24px; color:#1C1917;">
+      <div style="max-width:560px; margin:0 auto; background:#ffffff; border:1px solid #E8E2D8; border-radius:12px; overflow:hidden;">
+        <div style="background:#1C1917; color:#ffffff; padding:18px 24px; font-weight:700; letter-spacing:0.5px;">Nirikshan • AICTE Approval Workflow</div>
         <div style="padding:24px;">
           <h2 style="font-size:17px; margin:0 0 12px;">{subject}</h2>
           <p style="font-size:14px; line-height:1.6; margin:0 0 24px;">{body}</p>

@@ -252,7 +252,7 @@ export default function HelpDrawer() {
               <BookOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#1C1917] font-serif">ApprovalTrack Guide &amp; Glossary</h2>
+              <h2 className="text-base font-bold text-[#1C1917] font-serif">Nirikshan Guide &amp; Glossary</h2>
               <p className="text-[11px] text-stone-500">Evaluator walkthrough, role matrix &amp; statutory terms</p>
             </div>
           </div>

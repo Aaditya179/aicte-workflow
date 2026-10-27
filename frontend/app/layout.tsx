@@ -18,8 +18,17 @@ import HelpDrawer from "@/components/HelpDrawer";
 import { LanguageProvider } from "@/context/LanguageContext";
 
 export const metadata: Metadata = {
-  title: "AICTE Workflow & SLA Monitoring",
-  description: "AICTE Smart Automation & Real-Time SLA Monitoring System",
+  title: "Nirikshan | AICTE Approval Workflow & Compliance Monitoring System",
+  description: "Nirikshan: AICTE Approval Workflow & Statutory Compliance Monitoring System (SIH26262)",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", sizes: "192x192", type: "image/png" },
+      { url: "/nirikshan-icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/nirikshan-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -38,7 +47,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col bg-[#FAF7F2] text-[#1C1917] selection:bg-[#FBF0E4] selection:text-[#C25E26] bg-grid-texture antialiased"
       >
         <LanguageProvider>
-          <Suspense fallback={<div className="h-16 bg-[#FAF7F2] border-b border-[#E8E2D8]" />}>
+          <Suspense fallback={<div className="h-16 bg-transparent" />}>
             <Navbar />
           </Suspense>
           <main className="flex-1 bg-[#FAF7F2] bg-grid-texture">{children}</main>

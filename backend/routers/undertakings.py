@@ -26,6 +26,7 @@ class UndertakingCreate(BaseModel):
 class UndertakingSubmit(BaseModel):
     title: str = "Compliance Evidence Document"
     storage_path: str = "documents/undertakings/evidence.pdf"
+    evidence_document_id: Optional[str] = None
 
 
 class UndertakingVerify(BaseModel):
@@ -142,18 +143,26 @@ async def submit_undertaking_evidence(
     if ut.get("status") not in ("pending", "rejected", "overdue"):
         raise HTTPException(status_code=400, detail=f"Evidence cannot be submitted while the undertaking is '{ut.get('status')}'")
 
-    # Register evidence in documents table
-    doc_payload = {
-        "institution_id": ut.get("institution_id"),
-        "application_id": ut.get("application_id"),
-        "doc_type": "undertaking_evidence",
-        "title": req.title,
-        "storage_path": req.storage_path,
-        "status": "under_verification",
-        "uploaded_by": str(user.id),
-    }
-    doc_res = _supabase.table("documents").insert(doc_payload).execute()
-    doc_id = doc_res.data[0]["id"] if doc_res.data else None
+    if req.evidence_document_id:
+        # A file already uploaded through /documents/upload
+        doc = _supabase.table("documents").select("id, institution_id").eq("id", req.evidence_document_id).limit(1).execute().data
+        if not doc or doc[0]["institution_id"] != ut.get("institution_id"):
+            raise HTTPException(status_code=400, detail="The evidence document does not belong to this institution")
+        doc_id = doc[0]["id"]
+        _supabase.table("documents").update({"status": "under_verification"}).eq("id", doc_id).execute()
+    else:
+        # Register evidence in documents table
+        doc_payload = {
+            "institution_id": ut.get("institution_id"),
+            "application_id": ut.get("application_id"),
+            "doc_type": "undertaking_evidence",
+            "title": req.title,
+            "storage_path": req.storage_path,
+            "status": "under_verification",
+            "uploaded_by": str(user.id),
+        }
+        doc_res = _supabase.table("documents").insert(doc_payload).execute()
+        doc_id = doc_res.data[0]["id"] if doc_res.data else None
 
     # Update undertaking status to 'submitted'
     update_payload = {

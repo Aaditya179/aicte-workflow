@@ -44,11 +44,8 @@ async def create_or_update_decision_draft(
     role = current_user.role
     if role not in ["regional_officer", "bureau_officer", "scrutiny_officer", "sac_shc_member"]:
         raise HTTPException(status_code=403, detail="Only authorized officers can formulate decisions")
-    app = db.fetch_one("applications", id=id)
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
-    if role in ("regional_officer", "scrutiny_officer") and app.get("region_id") != current_user.region_id:
-        raise HTTPException(status_code=403, detail="Application is outside your region")
+    from routers.applications import _get_scoped_app
+    _get_scoped_app(id, current_user)
 
     try:
         res = await assurance_service.create_decision_draft(
@@ -72,6 +69,11 @@ async def get_decision_assurance_report(
     """
     Fetches the latest assurance report and all associated flags for a decision.
     """
+    from routers.applications import _get_scoped_app
+    dec = db.fetch_one("decisions", id=id)
+    if not dec:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    _get_scoped_app(dec["application_id"], current_user)
     report = db.table("assurance_reports").select("*") \
         .eq("decision_id", id) \
         .order("generated_at", desc=True) \

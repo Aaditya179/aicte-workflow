@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -144,22 +145,20 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#FAF7F2] bg-grid-texture text-[#1C1917] selection:bg-[#FBF0E4] selection:text-[#C25E26] flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans">
       {/* Header Banner */}
-      <header className="max-w-6xl mx-auto w-full pt-4 pb-6 flex items-center justify-between border-b border-[#E8E2D8]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-white border border-[#E5DFD5] flex items-center justify-center text-[#C25E26] shadow-2xs font-extrabold text-base">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1">
-              <span className="font-extrabold text-lg tracking-tight text-[#1C1917]">Approval</span>
-              <span className="font-extrabold text-lg tracking-tight text-[#C25E26]">Track</span>
-            </div>
-            <p className="text-[10px] tracking-widest uppercase font-semibold text-stone-500">
-              AICTE National Approval Process &amp; SLA Monitoring
-            </p>
-          </div>
-        </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#FBF0E4] border border-[#F0D5BE] text-[#C25E26]">
+      <header className="max-w-6xl mx-auto w-full pt-4 pb-6 flex items-center justify-between">
+        {/* Floating Brand (no background pill) */}
+        <Link
+          href="/welcome"
+          className="inline-flex items-center transition hover:opacity-85"
+          title="Nirikshan - AICTE Approval Workflow & Compliance Monitoring System"
+        >
+          <img
+            src="/nirikshan-header-logo.png"
+            alt="Nirikshan Logo"
+            className="h-9 sm:h-10 w-auto object-contain"
+          />
+        </Link>
+        <div className="flex items-center gap-2 text-xs font-semibold px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#E8E2D8] text-[#C25E26] shadow-xs">
           <span className="w-2 h-2 rounded-full bg-[#C25E26] animate-pulse"></span>
           SIH26262 Prototype
         </div>

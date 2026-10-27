@@ -30,7 +30,7 @@ class AvailabilityUpdate(BaseModel):
 
 
 SUGGESTION_WINDOW_DAYS = 30
-COMMITTEE_SIZE = 3
+COMMITTEE_SIZE = 2
 BUSY_MONTH_VISITS = 3
 
 
@@ -110,7 +110,11 @@ async def get_availability(
     by_member: Dict[str, Dict[str, bool]] = {}
     for r in rows or []:
         by_member.setdefault(r["member_id"], {})[r["day"]] = r["available"]
-    return [{**m, "days": by_member.get(m["user_id"], {})} for m in members]
+    return {
+        "start": start.isoformat(),
+        "days": [(start + timedelta(days=i)).isoformat() for i in range(days)],
+        "members": [{**m, "days": by_member.get(m["user_id"], {})} for m in members],
+    }
 
 
 @router.put("/availability")

@@ -107,7 +107,7 @@ async def send(req: SendRequest, user: AuthenticatedUser = Depends(require_role(
         for uid in recipients:
             address = notifier._get_user_email(uid)
             if address:
-                subject = f"ApprovalTrack: new message on {app['application_no']}"
+                subject = f"Nirikshan: new message on {app['application_no']}"
                 body = f"A new message about reference {app['application_no']} is waiting. Sign in to read it."
                 email_service.send_email(address, subject, email_service.notice_html(
                     subject, body, f"{settings.FRONTEND_ORIGIN}/applications/{app['id']}"))

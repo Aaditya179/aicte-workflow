@@ -44,44 +44,53 @@ export default function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] bg-grid-texture text-[#1C1917] selection:bg-[#FBF0E4] selection:text-[#C25E26] font-sans">
-      {/* 1. Header */}
-      <header className="sticky top-0 z-30 bg-[#FAF7F2]/90 backdrop-blur-md border-b border-[#E8E2D8]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C25E26] text-white flex items-center justify-center font-bold text-sm shadow-sm shadow-[#C25E26]/20">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-lg tracking-tight text-[#1C1917] font-serif">ApprovalTrack</span>
-              </div>
-              <p className="text-[10px] tracking-wider uppercase font-semibold text-stone-500">
-                AICTE Statutory Workflow &amp; SLA Monitoring
-              </p>
-            </div>
+      {/* 1. Invisible Header with Floating Buttons */}
+      <header className="sticky top-0 z-30 w-full bg-transparent border-none pt-3 sm:pt-4 pb-2 px-4 sm:px-6 pointer-events-none">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+          {/* Left: Floating Brand (no background pill) */}
+          <div className="pointer-events-auto flex items-center">
+            <Link
+              href="/welcome"
+              className="inline-flex items-center transition hover:opacity-85"
+              title="Nirikshan - AICTE Approval Workflow & Compliance Monitoring System"
+            >
+              <img
+                src="/nirikshan-header-logo.png"
+                alt="Nirikshan Logo"
+                className="h-9 sm:h-10 w-auto object-contain"
+              />
+            </Link>
           </div>
 
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-stone-600">
-            <a href="#two-minute-path" className="hover:text-[#C25E26] transition font-semibold text-[#C25E26] flex items-center gap-1">
+          {/* Center: Floating Navigation Island */}
+          <nav className="pointer-events-auto hidden md:flex items-center gap-1.5 bg-white/95 backdrop-blur-md border border-[#E8E2D8] px-4 py-1.5 rounded-full shadow-xs text-xs font-semibold text-stone-600">
+            <a href="#two-minute-path" className="px-3 py-1 rounded-full text-[#C25E26] bg-[#FBF0E4] border border-[#F0D5BE] flex items-center gap-1">
               <Zap className="w-3.5 h-3.5 text-[#C25E26]" />
               <span>2-Min Walkthrough</span>
             </a>
-            <a href="#stages" className="hover:text-[#C25E26] transition">Statutory Stages</a>
-            <a href="#features" className="hover:text-[#C25E26] transition">Key Features</a>
-            <a href="#demo-roles" className="hover:text-[#C25E26] transition">Demo Roles</a>
+            <a href="#stages" className="px-3 py-1 rounded-full hover:text-[#C25E26] hover:bg-stone-100/70 transition">
+              Statutory Stages
+            </a>
+            <a href="#features" className="px-3 py-1 rounded-full hover:text-[#C25E26] hover:bg-stone-100/70 transition">
+              Key Features
+            </a>
+            <a href="#demo-roles" className="px-3 py-1 rounded-full hover:text-[#C25E26] hover:bg-stone-100/70 transition">
+              Demo Roles
+            </a>
             <button
               onClick={() => openHelpDrawer('glossary')}
-              className="hover:text-[#C25E26] transition text-stone-600 cursor-pointer flex items-center gap-1"
+              className="px-3 py-1 rounded-full hover:text-[#C25E26] hover:bg-stone-100/70 transition cursor-pointer flex items-center gap-1"
             >
-              <HelpCircle className="w-3.5 h-3.5" />
+              <HelpCircle className="w-3.5 h-3.5 text-[#C25E26]" />
               <span>Guide &amp; Glossary</span>
             </button>
           </nav>
 
-          <div className="flex items-center gap-3">
+          {/* Right: Floating Sign In Button */}
+          <div className="pointer-events-auto flex items-center gap-2">
             <Link
               href="/login"
-              className="px-5 py-2 rounded-full bg-[#C25E26] hover:bg-[#A84A19] text-white text-xs font-semibold transition-all shadow-sm shadow-[#C25E26]/20 flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-full bg-[#C25E26] hover:bg-[#A84A19] text-white text-xs font-bold transition shadow-sm shadow-[#C25E26]/20 flex items-center gap-1.5 cursor-pointer"
             >
               <span>Sign In</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -824,8 +833,9 @@ export default function WelcomePage() {
       <footer className="border-t border-[#E8E2D8] bg-[#FAF7F2] py-8 text-xs text-stone-500">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div>
-            <div className="flex items-center justify-center sm:justify-start gap-1.5 font-bold text-stone-800">
-              <span className="font-serif">ApprovalTrack</span>
+            <div className="flex items-center justify-center sm:justify-start gap-2 font-bold text-stone-800">
+              <img src="/nirikshan-icon.png" alt="Nirikshan" className="w-6 h-6 object-contain" />
+              <span className="font-serif">Nirikshan</span>
               <span>•</span>
               <span className="text-[#C25E26]">AICTE Statutory Prototype (SIH26262)</span>
             </div>

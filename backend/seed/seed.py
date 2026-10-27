@@ -139,7 +139,7 @@ TEMPLATES = [
                 "sac_shc": {
                     "label": "SAC/SHC Committee",
                     "sla_days": 20,
-                    "owner_role": "bureau_officer",
+                    "owner_role": "sac_shc_member",
                     "next": "final_decision"
                 },
                 "final_decision": {
@@ -254,35 +254,61 @@ def seed_institutions(region_map):
     print(f"Primary institution seeded: {primary_id}")
     return primary_id
 
-def create_or_get_user(email: str, password: str, metadata: dict):
-    # Try to find existing user
-    users = supabase.auth.admin.list_users()
-    target_user = None
-    for u in users:
-        if u.email == email:
-            target_user = u
-            break
+def find_user_id(email: str):
+    """The auth user id for an email, paging through every user."""
+    page = 1
+    while True:
+        users = supabase.auth.admin.list_users(page=page, per_page=200)
+        for u in users:
+            if (u.email or "").lower() == email.lower():
+                return u.id
+        if len(users) < 200:
+            return None
+        page += 1
 
-    if target_user:
-        # Update user app_metadata and password
+
+def create_or_get_user(email: str, password: str, metadata: dict):
+    user_id = find_user_id(email)
+    if user_id:
         supabase.auth.admin.update_user_by_id(
-            target_user.id,
+            user_id,
             {
                 "password": password,
                 "app_metadata": metadata,
                 "user_metadata": metadata
             }
         )
-        return target_user.id
+        return user_id
+    new_u = supabase.auth.admin.create_user({
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "app_metadata": metadata,
+        "user_metadata": metadata
+    })
+    return new_u.user.id
+
+
+def upsert_account(email: str, full_name: str, role: str, region_id, institution_id):
+    """Create or update a demo login and its profile."""
+    metadata = {"role": role, "region_id": region_id, "institution_id": institution_id, "full_name": full_name}
+    user_id = create_or_get_user(email, DEMO_PASSWORD, metadata)
+    prof_data = {
+        "user_id": user_id,
+        "full_name": full_name,
+        "role": role,
+        "region_id": region_id,
+        "institution_id": institution_id,
+        "locale": "en"
+    }
+    prof = supabase.table("profiles").select("user_id").eq("user_id", user_id).execute()
+    if prof.data:
+        supabase.table("profiles").update(prof_data).eq("user_id", user_id).execute()
     else:
-        new_u = supabase.auth.admin.create_user({
-            "email": email,
-            "password": password,
-            "email_confirm": True,
-            "app_metadata": metadata,
-            "user_metadata": metadata
-        })
-        return new_u.user.id
+        supabase.table("profiles").insert(prof_data).execute()
+    print(f"User {email} created/updated with ID: {user_id}")
+    return user_id
+
 
 def seed_demo_accounts(region_map, primary_institution_id):
     print("Seeding demo accounts...")
@@ -334,29 +360,7 @@ def seed_demo_accounts(region_map, primary_institution_id):
     ]
 
     for d in demo_users:
-        metadata = {
-            "role": d["role"],
-            "region_id": d["region_id"],
-            "institution_id": d["institution_id"],
-            "full_name": d["full_name"]
-        }
-        user_id = create_or_get_user(d["email"], DEMO_PASSWORD, metadata)
-        print(f"User {d['email']} created/updated with ID: {user_id}")
-
-        # Update or insert into public.profiles
-        prof = supabase.table("profiles").select("*").eq("user_id", user_id).execute()
-        prof_data = {
-            "user_id": user_id,
-            "full_name": d["full_name"],
-            "role": d["role"],
-            "region_id": d["region_id"],
-            "institution_id": d["institution_id"],
-            "locale": "en"
-        }
-        if prof.data and len(prof.data) > 0:
-            supabase.table("profiles").update(prof_data).eq("user_id", user_id).execute()
-        else:
-            supabase.table("profiles").insert(prof_data).execute()
+        upsert_account(d["email"], d["full_name"], d["role"], d["region_id"], d["institution_id"])
 
     print("Demo accounts and profiles seeded successfully.")
 
@@ -368,9 +372,9 @@ def seed_rules_and_chains(region_map):
         supabase.table("escalation_chains").insert({
             "scope": "application_stage",
             "levels": [
-                {"level": 1, "after_days_overdue": 0, "notify_role": "assigned_officer"},
-                {"level": 2, "after_days_overdue": 3, "notify_role": "regional_officer"},
-                {"level": 3, "after_days_overdue": 7, "notify_role": "bureau_officer"}
+                {"level": 1, "after_days_overdue": 0, "notify_role": "assigned_officer", "channels": ["in_app", "email"]},
+                {"level": 2, "after_days_overdue": 3, "notify_role": "regional_officer", "channels": ["in_app", "email", "sms"]},
+                {"level": 3, "after_days_overdue": 7, "notify_role": "bureau_officer", "channels": ["in_app", "email", "sms", "whatsapp"]}
             ],
             "ack_timeout_hours": 48
         }).execute()
@@ -398,6 +402,9 @@ def run_seed():
     primary_inst_id = seed_institutions(region_map)
     seed_demo_accounts(region_map, primary_inst_id)
     seed_rules_and_chains(region_map)
+    from seed.v2_seed import seed_v2_accounts, seed_v2_reference
+    seed_v2_accounts(region_map)
+    seed_v2_reference()
     print("=== Seeding Complete ===")
 
 if __name__ == "__main__":

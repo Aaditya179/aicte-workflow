@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # MFA (§15.8). Officer routes need an aal2 token. DEMO_MFA_BYPASS lets demo officers skip it,
     # except the accounts in DEMO_MFA_ENFORCED_EMAILS, which show the full flow. Off in any real deployment.
     DEMO_MFA_BYPASS: bool = False
-    DEMO_MFA_ENFORCED_EMAILS: str = "regional@demo.sih"
+    DEMO_MFA_ENFORCED_EMAILS: str = "mfa.officer@demo.sih"
 
     # LLM (§10, §15.3)
     LLM_MODEL: str = "claude-opus-5-5"

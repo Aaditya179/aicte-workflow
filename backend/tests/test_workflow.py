@@ -53,6 +53,10 @@ def admin_token():
 def evc_token():
     return _sign_in("evc@demo.sih")
 
+@pytest.fixture(scope="module")
+def sacshc_token():
+    return _sign_in("sacshc@demo.sih")
+
 # ─── Helper ─────────────────────────────────────────────────────────────────
 
 def _get_institution_id(token: str) -> str:
@@ -164,45 +168,34 @@ class TestWorkflowSCRUTINY_EVC:
 
 
 class TestWorkflowEVC_SAC_SHC:
-    """EVC_SAC_SHC: evc_queue → evc_visit → sac_shc → final_decision"""
+    """EVC_SAC_SHC: evc_queue → evc_visit → sac_shc → final_decision, each advanced by its owner."""
 
-    def test_admin_can_advance_any_stage(self, institution_token, admin_token):
-        # Admin submits on behalf of institution
-        inst_id = _get_institution_id(institution_token)
-        r = client.post(
-            "/api/v1/applications",
-            json={"application_type": "EVC SAC SHC Test", "template_code": "EVC_SAC_SHC", "institution_id": inst_id},
-            headers=_headers(admin_token)
-        )
-        assert r.status_code == 201
-        app_id = r.json()["id"]
-        assert r.json()["current_stage"] == "evc_queue"
-
-        # Admin can advance through all stages
-        for expected_stage in ["evc_visit", "sac_shc", "final_decision"]:
-            r = client.post(f"/api/v1/applications/{app_id}/advance", json={}, headers=_headers(admin_token))
+    def test_full_path_by_stage_owners(self, institution_token, regional_token, evc_token, sacshc_token):
+        app_id = _submit_app(institution_token, "EVC_SAC_SHC")["id"]
+        for token, expected_stage in [(regional_token, "evc_visit"), (evc_token, "sac_shc"), (sacshc_token, "final_decision")]:
+            r = client.post(f"/api/v1/applications/{app_id}/advance", json={}, headers=_headers(token))
             assert r.status_code == 200, f"Advance to {expected_stage} failed: {r.text}"
             assert r.json()["current_stage"] == expected_stage
 
 
-class TestWorkflowONLY_EVC:
-    """ONLY_EVC: evc_queue → evc_visit → final_decision"""
+class TestAdminHasNoCaseAccess:
+    """§15.0: the administrator cannot submit, read or act on cases."""
 
-    def test_only_evc_full_path(self, institution_token, admin_token):
+    def test_admin_cannot_submit(self, institution_token, admin_token):
         inst_id = _get_institution_id(institution_token)
         r = client.post(
             "/api/v1/applications",
-            json={"application_type": "Only EVC Test", "template_code": "ONLY_EVC", "institution_id": inst_id},
+            json={"application_type": "Admin attempt", "template_code": "ONLY_EVC", "institution_id": inst_id},
             headers=_headers(admin_token)
         )
-        assert r.status_code == 201
-        app_id = r.json()["id"]
-        assert r.json()["current_stage"] == "evc_queue"
+        assert r.status_code == 403
 
-        for expected_stage in ["evc_visit", "final_decision"]:
-            r = client.post(f"/api/v1/applications/{app_id}/advance", json={}, headers=_headers(admin_token))
-            assert r.status_code == 200
-            assert r.json()["current_stage"] == expected_stage
+    def test_admin_cannot_read_or_advance(self, institution_token, admin_token):
+        app_id = _submit_app(institution_token, "ONLY_EVC")["id"]
+        assert client.get("/api/v1/applications", headers=_headers(admin_token)).status_code == 403
+        assert client.get(f"/api/v1/applications/{app_id}", headers=_headers(admin_token)).status_code == 403
+        r = client.post(f"/api/v1/applications/{app_id}/advance", json={}, headers=_headers(admin_token))
+        assert r.status_code == 403
 
 
 class TestRoleEnforcement:

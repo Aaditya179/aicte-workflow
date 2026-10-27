@@ -154,7 +154,7 @@ async def acknowledge_alert_by_token(req: AlertSignedAckRequest):
 
     now_iso = clock.now().isoformat()
     # Check if user_id exists in profiles
-    prof = _supabase.table("profiles").select("user_id, role, full_name, email").eq("user_id", req.user_id).limit(1).execute()
+    prof = _supabase.table("profiles").select("user_id, role, full_name").eq("user_id", req.user_id).limit(1).execute()
     ack_user_id = req.user_id if prof.data else None
 
     update_data = {

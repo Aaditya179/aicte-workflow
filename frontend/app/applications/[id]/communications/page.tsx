@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
@@ -8,6 +8,14 @@ import CommunicationsPanel from '@/components/CommunicationsPanel';
 import { PageShell, btnSecondary, Notice, useMe } from '@/components/ui';
 
 export default function ApplicationCommunicationsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-stone-500">Loading…</div>}>
+      <CommunicationsContent />
+    </Suspense>
+  );
+}
+
+function CommunicationsContent() {
   const { id } = useParams<{ id: string }>();
   const { me } = useMe();
   const [appNo, setAppNo] = useState<string | null>(null);

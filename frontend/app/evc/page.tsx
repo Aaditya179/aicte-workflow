@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, Suspense } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { 
   Calendar, CheckCircle2, Clock, AlertTriangle, Users, 
@@ -171,7 +172,8 @@ function EVCContent() {
     }
   };
 
-  const canManage = role === 'regional_officer' || role === 'bureau_officer' || role === 'admin';
+  // Matches the API: only the regional officer schedules; members and the regional officer report
+  const canManage = role === 'regional_officer';
   const canReport = canManage || role === 'evc_member';
 
   return (
@@ -257,16 +259,24 @@ function EVCContent() {
                       {v.completion_due_at ? new Date(v.completion_due_at).toLocaleDateString() : '—'}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-2">
-                      {v.status === 'queued' && canManage && (
-                        <button
-                          onClick={() => {
-                            setScheduleModalVisit(v);
-                            setScheduledDate('');
-                          }}
-                          className="px-3 py-1 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] transition cursor-pointer shadow-2xs"
-                        >
-                          Schedule
-                        </button>
+                      {(v.status === 'queued' || v.status === 'overdue') && canManage && (
+                        <>
+                          <Link
+                            href={`/evc/${v.id}/schedule`}
+                            className="inline-block px-3 py-1 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] transition shadow-2xs"
+                          >
+                            Suggest dates
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setScheduleModalVisit(v);
+                              setScheduledDate('');
+                            }}
+                            className="px-3 py-1 text-xs font-medium rounded-full bg-white text-stone-700 border border-[#E8E2D8] hover:bg-[#FAF7F2] transition cursor-pointer"
+                          >
+                            Pick date manually
+                          </button>
+                        </>
                       )}
                       {v.status === 'scheduled' && canReport && (
                         <>

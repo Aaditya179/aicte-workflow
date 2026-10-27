@@ -64,3 +64,7 @@ class ApplicationResponse(BaseModel):
     risk_score: Optional[int]
     risk_label: Optional[str]
     created_at: Optional[Any]
+    # Detail view only: who may act on the current stage, and where Advance leads
+    stage_owner_role: Optional[str] = None
+    next_stage: Optional[str] = None
+    can_return: Optional[bool] = None

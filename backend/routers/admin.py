@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from typing import Optional, List, Dict, Any
 import csv
 import io
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from supabase import create_client
 
 from core.config import settings
-from core.security import AuthenticatedUser, require_role, get_current_user
+from core.security import AuthenticatedUser, require_role
 from core import clock
 from services import scheduler
 from services import audit as audit_service
@@ -83,6 +83,25 @@ async def get_clock(user: AuthenticatedUser = Depends(require_role(["admin"]))):
         "offset_days": round(offset_days, 2),
         "is_simulated": abs(offset_days) > 0.0001
     }
+
+
+DEMO_WATCH_CASE = "DEMO-CASE-B"
+
+
+@router.get("/clock/demo-case")
+async def get_demo_case_timing(user: AuthenticatedUser = Depends(require_role(["admin"]))):
+    """
+    Timing of the scripted simulator case (Case B) for the simulator page. The admin has no case
+    access (§15.0), so this returns only the reference, stage, dates and alert levels, no case content.
+    """
+    rows = _supabase.table("applications").select("id, application_no, current_stage, stage_entered_at, due_at") \
+        .eq("application_no", DEMO_WATCH_CASE).limit(1).execute().data
+    if not rows:
+        return {"case": None, "alerts": []}
+    case = rows[0]
+    alerts = _supabase.table("alerts").select("id, kind, level, severity, status, target_role, fired_at") \
+        .eq("entity_type", "application").eq("entity_id", case["id"]).order("fired_at", desc=True).execute().data or []
+    return {"case": {k: case[k] for k in ("application_no", "current_stage", "stage_entered_at", "due_at")}, "alerts": alerts}
 
 
 @router.post("/clock/advance")

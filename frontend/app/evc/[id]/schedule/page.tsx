@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
@@ -25,6 +25,14 @@ interface Visit {
 }
 
 export default function ScheduleVisitPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-stone-500">Loading…</div>}>
+      <ScheduleVisitContent />
+    </Suspense>
+  );
+}
+
+function ScheduleVisitContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [visit, setVisit] = useState<Visit | null>(null);

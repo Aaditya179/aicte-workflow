@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { NEW_NOTIFICATION_EVENT } from '@/components/AlertBell';
 import {
   AlertTriangle, ShieldAlert, Clock, CheckCircle2,
   Filter, Search, RefreshCw, Check, Loader2, ArrowRight
@@ -64,6 +65,10 @@ export default function AlertsInboxPage() {
 
   useEffect(() => {
     loadData();
+    // A realtime notification means a new or escalated alert: refresh the list
+    const onNew = () => loadData();
+    window.addEventListener(NEW_NOTIFICATION_EVENT, onNew);
+    return () => window.removeEventListener(NEW_NOTIFICATION_EVENT, onNew);
   }, [statusFilter, severityFilter, kindFilter]);
 
   const handleAcknowledge = async () => {
@@ -323,6 +328,12 @@ export default function AlertsInboxPage() {
 
                 {/* Action buttons */}
                 <div className="flex items-center gap-2 self-end sm:self-center">
+                  <Link
+                    href={`/alerts/${a.id}`}
+                    className="px-3.5 py-1.5 rounded-full border border-[#E8E2D8] bg-white hover:bg-[#FAF7F2] text-xs font-medium text-stone-700 transition inline-flex items-center gap-1 shadow-2xs"
+                  >
+                    Delivery
+                  </Link>
                   {a.entity_type === 'application_stage' && (
                     <Link
                       href={`/applications/${a.entity_id}`}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
@@ -20,6 +20,14 @@ interface Alert {
 }
 
 export default function AlertDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-stone-500">Loading…</div>}>
+      <AlertDetailContent />
+    </Suspense>
+  );
+}
+
+function AlertDetailContent() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<{ alert: Alert; recipients: RecipientDeliveries[] } | null>(null);
   const [error, setError] = useState<string | null>(null);

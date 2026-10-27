@@ -73,6 +73,14 @@ async def api_health_check():
         "service": "aicte-workflow-backend-api-v1"
     }
 
+@app.get("/api/v1/clock", tags=["Health"])
+async def get_clock_public(user: AuthenticatedUser = Depends(get_current_user)):
+    """Simulated date for the demo banner, readable by every signed-in user (§8.3)."""
+    from core import clock
+    offset = clock.get_offset_days()
+    return {"clock_now": clock.now().isoformat(), "offset_days": round(offset, 2), "is_simulated": abs(offset) > 0.0001}
+
+
 @app.get("/api/v1/me", tags=["Auth"])
 async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
     return {

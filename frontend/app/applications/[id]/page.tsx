@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, Suspense } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
 import {
@@ -8,6 +9,8 @@ import {
   RotateCcw, UserPlus, SendHorizonal, ChevronDown, Loader2, ShieldAlert, FileText
 } from 'lucide-react';
 import AssurancePanel from '@/components/AssurancePanel';
+import CaseAssistantPanel from '@/components/CaseAssistantPanel';
+import { useMe } from '@/components/ui';
 
 interface Application {
   id: string;
@@ -21,7 +24,15 @@ interface Application {
   due_at: string | null;
   risk_score: number | null;
   risk_label: string | null;
+  stage_owner_role: string | null;
+  next_stage: string | null;
+  can_return: boolean | null;
 }
+
+const ROLE_NAMES: Record<string, string> = {
+  institution: 'the institution', scrutiny_officer: 'the scrutiny officer', regional_officer: 'the regional officer',
+  evc_member: 'the EVC member', sac_shc_member: 'the SAC/SHC member', bureau_officer: 'the bureau officer',
+};
 
 interface StageHistoryEntry {
   id: string;
@@ -101,6 +112,7 @@ function RiskBadge({ score, label }: { score: number | null; label: string | nul
 function ApplicationDetailContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { me } = useMe();
   const [app, setApp] = useState<Application | null>(null);
   const [timeline, setTimeline] = useState<{ stage_history: StageHistoryEntry[]; audit_entries: AuditEntry[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,6 +181,12 @@ function ApplicationDetailContent() {
               <p className="text-sm text-stone-500 mt-0.5">{app.application_type}</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <Link
+                href={`/applications/${app.id}/communications`}
+                className="px-3 py-1 rounded-full text-xs font-semibold border border-[#E8E2D8] bg-white text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
+              >
+                Communications
+              </Link>
               <RiskBadge score={app.risk_score} label={app.risk_label} />
               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
                 app.status === 'in_progress' ? 'bg-[#FBF0E4] text-[#C25E26] border-[#F0D5BE]' :
@@ -199,24 +217,41 @@ function ApplicationDetailContent() {
                 {actionError}
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => doAction('advance', {})}
-                disabled={!!actionLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-[#C25E26] hover:bg-[#A84A19] text-white text-xs font-medium rounded-full transition disabled:opacity-50 shadow-2xs cursor-pointer"
-              >
-                {actionLoading === 'advance' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                Advance Stage
-              </button>
-              <button
-                onClick={() => setShowReasonFor(showReasonFor === 'return' ? null : 'return')}
-                disabled={!!actionLoading}
-                className="flex items-center gap-1.5 px-4 py-2 border border-[#E8E2D8] bg-white hover:bg-[#FAF7F2] text-stone-700 text-xs font-medium rounded-full transition shadow-2xs cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Return for Deficiency
-              </button>
-            </div>
+            {/* Only the owner of the current stage can act on it; everyone else sees who holds it */}
+            {app.status !== 'in_progress' && app.status !== 'returned' ? (
+              <p className="text-sm text-stone-600">This application is {app.status.replace('_', ' ')}. No further stage actions.</p>
+            ) : me && me.role !== app.stage_owner_role ? (
+              <p className="text-sm text-stone-600">
+                This stage ({STAGE_LABELS[app.current_stage] || app.current_stage}) is with{' '}
+                <strong className="text-stone-900">{ROLE_NAMES[app.stage_owner_role || ''] || app.stage_owner_role || 'another role'}</strong>.
+                Only they can move it on.
+              </p>
+            ) : me && (
+              <div className="flex flex-wrap gap-2">
+                {app.next_stage ? (
+                  <button
+                    onClick={() => doAction('advance', {})}
+                    disabled={!!actionLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#C25E26] hover:bg-[#A84A19] text-white text-xs font-medium rounded-full transition disabled:opacity-50 shadow-2xs cursor-pointer"
+                  >
+                    {actionLoading === 'advance' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    {me.role === 'institution' ? 'Send response' : `Advance to ${STAGE_LABELS[app.next_stage] || app.next_stage}`}
+                  </button>
+                ) : (
+                  <p className="text-sm text-stone-600">This is the last stage. Record the decision in Decision Assurance below.</p>
+                )}
+                {app.can_return && (
+                  <button
+                    onClick={() => setShowReasonFor(showReasonFor === 'return' ? null : 'return')}
+                    disabled={!!actionLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-[#E8E2D8] bg-white hover:bg-[#FAF7F2] text-stone-700 text-xs font-medium rounded-full transition shadow-2xs cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Return for Deficiency
+                  </button>
+                )}
+              </div>
+            )}
 
             {showReasonFor && (
               <div className="mt-2 space-y-2">
@@ -246,37 +281,7 @@ function ApplicationDetailContent() {
           />
 
           {/* AI Case Summary & Deficiency Notice Assistant (§10.3) */}
-          <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 space-y-4 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-serif font-bold text-[#1C1917] uppercase tracking-wider flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#C25E26]" /> Statutory Case Summary & AI Assistant
-              </h2>
-              <span className="text-[10px] font-semibold text-[#C25E26] bg-[#FBF0E4] border border-[#F0D5BE] px-2.5 py-0.5 rounded-full">
-                Advisory Only
-              </span>
-            </div>
-
-            <p className="text-xs text-stone-700 leading-relaxed bg-[#FAF7F2] p-3.5 rounded-xl border border-[#E8E2D8]">
-              {app.application_no ? (
-                `Application ${app.application_no} (${app.application_type}) is currently in the ${STAGE_LABELS[app.current_stage] || app.current_stage} stage with status '${app.status}'. Next required administrative action is for the scrutiny officer to review submitted evidence against AICTE approval guidelines.`
-              ) : 'Loading summary...'}
-            </p>
-
-            <div className="pt-2 border-t border-[#E8E2D8] flex items-center justify-between">
-              <span className="text-[11px] text-stone-400">
-                Word count: ~35 words (Max statutory limit: 150 words)
-              </span>
-              <button
-                onClick={() => {
-                  setShowReasonFor('return');
-                  setReasonInput('1. Discrepancy observed in faculty land ownership affidavit.\n2. Incomplete fire NOC endorsement.');
-                }}
-                className="text-xs font-medium text-[#C25E26] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                Generate Deficiency Draft Notice →
-              </button>
-            </div>
-          </div>
+          <CaseAssistantPanel applicationId={app.id} role={me?.role} />
 
           {/* Stage History */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs">

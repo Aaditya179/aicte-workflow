@@ -86,7 +86,11 @@ async def get_application(
     app_id: str,
     actor: AuthenticatedUser = Depends(require_case_access),
 ):
-    return _get_scoped_app(app_id, actor)
+    app = _get_scoped_app(app_id, actor)
+    tmpl = _supabase.table("workflow_templates").select("definition").eq("id", app["template_id"]).limit(1).execute().data
+    stage = ((tmpl[0]["definition"] if tmpl else {}).get("stages") or {}).get(app["current_stage"]) or {}
+    return {**app, "stage_owner_role": stage.get("owner_role"), "next_stage": stage.get("next"),
+            "can_return": bool(stage.get("on_return"))}
 
 
 # ─── Submit ──────────────────────────────────────────────────────────────────

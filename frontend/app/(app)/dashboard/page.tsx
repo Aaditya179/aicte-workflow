@@ -4,6 +4,7 @@ import React, { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import NextComplianceItems from '@/components/NextComplianceItems';
 import {
   FileText, ShieldAlert, AlertTriangle, FastForward,
   Clock, ArrowRight, UserCheck, Building2, CheckCircle2,
@@ -135,14 +136,20 @@ function DashboardContent() {
     const apiBase = rawApi.replace(/\/api\/v1\/?$/, '');
     const headers = { Authorization: `Bearer ${session.access_token}` };
 
+    // The administrator and auditor have no case dashboard (§15.0)
+    if (userRole === 'admin' || userRole === 'auditor') {
+      router.replace(userRole === 'admin' ? '/admin' : '/audit');
+      return;
+    }
+
     try {
-      if (userRole === 'admin' || userRole === 'bureau_officer') {
+      if (userRole === 'bureau_officer') {
         const res = await fetch(`${apiBase}/api/v1/dashboard/bureau`, { headers });
         if (res.ok) setBureauData(await res.json());
       } else if (userRole === 'regional_officer') {
         const res = await fetch(`${apiBase}/api/v1/dashboard/regional`, { headers });
         if (res.ok) setBureauData(await res.json());
-      } else if (userRole === 'scrutiny_officer' || userRole === 'evc_member') {
+      } else if (userRole === 'scrutiny_officer' || userRole === 'evc_member' || userRole === 'sac_shc_member') {
         const res = await fetch(`${apiBase}/api/v1/dashboard/officer`, { headers });
         if (res.ok) setOfficerData(await res.json());
       } else if (userRole === 'institution') {
@@ -219,6 +226,9 @@ function DashboardContent() {
         <Shield className="w-4 h-4 shrink-0" />
         <span>Advisory only, final decisions rest with the competent authority.</span>
       </div>
+
+      {/* Institution: next three compliance items (§15.6) */}
+      {role === 'institution' && <NextComplianceItems />}
 
       {/* 1. Bureau & Regional Officer View */}
       {bureauData && (

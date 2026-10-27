@@ -3,8 +3,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { Bell, Check, Clock, ExternalLink } from 'lucide-react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { fetchApi } from '@/lib/api';
+
+/** Fired on window when a realtime notification arrives, so open pages can refresh. */
+export const NEW_NOTIFICATION_EVENT = 'nirikshan:notification';
 
 interface NotificationItem {
   id: string;
@@ -19,6 +23,8 @@ export default function AlertBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [toast, setToast] = useState<NotificationItem | null>(null);
+  const [live, setLive] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const loadNotifications = async () => {
@@ -32,24 +38,42 @@ export default function AlertBell() {
   useEffect(() => {
     loadNotifications();
 
-    // Set up Supabase Realtime subscription on notifications table
-    const channel = supabase
-      .channel('public:notifications')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        (payload) => {
-          const newNotif = payload.new as NotificationItem;
-          setNotifications((prev) => [newNotif, ...prev]);
-          setUnreadCount((c) => c + 1);
-        }
-      )
-      .subscribe();
+    // Supabase Realtime: new in-app notifications for this user arrive without a refresh.
+    // RLS limits the stream to the user's own rows; the filter keeps the payload small.
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user.id;
+      if (!uid || cancelled) return;
+      supabase.realtime.setAuth(session.access_token);
+      channel = supabase
+        .channel(`notifications:${uid}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` },
+          (payload) => {
+            const n = payload.new as NotificationItem & { channel?: string };
+            if (n.channel && n.channel !== 'in_app') return;
+            setNotifications((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev]));
+            setUnreadCount((c) => c + 1);
+            setToast(n);
+            window.dispatchEvent(new CustomEvent(NEW_NOTIFICATION_EVENT, { detail: n }));
+          }
+        )
+        .subscribe((status) => setLive(status === 'SUBSCRIBED'));
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Close on outside click
   useEffect(() => {
@@ -81,12 +105,14 @@ export default function AlertBell() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        aria-label="Alerts and Notifications"
+        aria-label={`Alerts and Notifications${live ? ' (live)' : ''}`}
+        title={live ? 'Live: new alerts appear instantly' : 'Connecting to live alerts…'}
         className="relative p-2 rounded-full text-stone-600 hover:text-[#C25E26] hover:bg-[#FBF0E4] transition cursor-pointer"
       >
         <Bell className="w-5 h-5" />
+        <span aria-hidden className={`absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-stone-300'}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-[#C25E26] text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-[#C25E26] text-white text-[10px] font-bold rounded-full flex items-center justify-center motion-safe:animate-pulse">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -161,6 +187,28 @@ export default function AlertBell() {
           </div>
         </div>
       )}
+
+      <div aria-live="polite" className="fixed bottom-4 right-4 z-[60] w-[calc(100%-2rem)] max-w-sm">
+        {toast && (
+          <div role="status" className="rounded-2xl border border-[#F0D5BE] bg-white p-4 shadow-xl">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 rounded-full bg-[#FBF0E4] p-1.5 text-[#C25E26]"><Bell className="h-4 w-4" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-[#1C1917]">{toast.title}</p>
+                {toast.body && <p className="mt-0.5 line-clamp-3 text-xs text-stone-600">{toast.body}</p>}
+                <Link
+                  href={toast.alert_id ? `/alerts/${toast.alert_id}` : '/alerts'}
+                  onClick={() => setToast(null)}
+                  className="mt-2 inline-block text-xs font-bold text-[#C25E26] hover:underline"
+                >
+                  View alert
+                </Link>
+              </div>
+              <button onClick={() => setToast(null)} aria-label="Dismiss" className="text-lg leading-none text-stone-400 hover:text-stone-700">×</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export default function SimulatedDateBanner() {
         clock_now: string;
         offset_days: number;
         is_simulated: boolean;
-      }>('/admin/clock');
+      }>('/clock');
       if (data && data.is_simulated) {
         setClockData(data);
       } else {

@@ -19,6 +19,7 @@ import {
   ArrowRight,
   RotateCcw
 } from 'lucide-react';
+import { TWO_MINUTE_STEPS, demoLoginHref } from '@/lib/demoPath';
 
 interface GlossaryItem {
   term: string;
@@ -45,12 +46,12 @@ const GLOSSARY: GlossaryItem[] = [
   {
     term: 'SLA',
     full: 'Service Level Agreement',
-    definition: 'Fixed statutory calendar windows allocated to each stage (e.g. 15 days for scrutiny, 10 days for EVC scheduling). When exceeded, escalation triggers.'
+    definition: 'The time allowed for each stage, for example 15 days for scrutiny and 30 days to schedule an EVC visit. Reminders go out before it ends and escalation starts once it is overdue. The admin sets these.'
   },
   {
     term: 'Escalation',
     full: 'Multi-tier Notification Protocol',
-    definition: 'Automated warnings sent through in-app alerts, email, and SMS reaching higher administrative tiers (Officer -> Regional Director -> Bureau Chief) as pendency increases.'
+    definition: 'Overdue alerts that climb a level as the delay grows: the assigned officer on day 0, the regional officer on day 3 and the bureau officers on day 7, by in-app alert, email, SMS and WhatsApp.'
   },
   {
     term: 'Health Score',
@@ -99,7 +100,8 @@ const ROLES: RoleGuide[] = [
     actions: [
       'Configure stage SLAs, reminder offsets, and escalation chains',
       'Advance or reset the system clock in the Time Simulator',
-      'Ensure strict separation: cannot modify or override case decisions'
+      'Rule changes take effect only after a second admin approves them',
+      'Has no access to cases: cannot read, move or decide any application'
     ]
   }
 ];
@@ -113,56 +115,14 @@ interface WalkthroughCheckpoint {
   linkHref: string;
 }
 
-const WALKTHROUGH_CHECKPOINTS: WalkthroughCheckpoint[] = [
-  {
-    id: 'step-1',
-    stepNum: '01',
-    title: 'Enter as Regional Officer',
-    description: 'Use the one-click demo login to access the Western Region administrative portal.',
-    linkText: 'Launch Portal',
-    linkHref: '/login?demo=regional_officer'
-  },
-  {
-    id: 'step-2',
-    stepNum: '02',
-    title: 'Inspect Urgent Queue & Case B',
-    description: 'View DEMO-CASE-B in Scrutiny stage with live SLA countdowns and days remaining.',
-    linkText: 'Applications Queue',
-    linkHref: '/applications'
-  },
-  {
-    id: 'step-3',
-    stepNum: '03',
-    title: 'Advance Time Simulator',
-    description: 'Shift the simulated clock +3 or +7 days in the admin simulator to breach statutory SLAs.',
-    linkText: 'Open Simulator',
-    linkHref: '/admin/simulator'
-  },
-  {
-    id: 'step-4',
-    stepNum: '04',
-    title: 'Inspect Multi-Tier Escalations',
-    description: 'Observe Level 1, 2, and 3 automated alerts dispatched across in-app, email, and SMS.',
-    linkText: 'View Alerts Feed',
-    linkHref: '/alerts'
-  },
-  {
-    id: 'step-5',
-    stepNum: '05',
-    title: 'Cryptographic Ledger Audit',
-    description: 'Click "Verify Integrity" to validate the tamper-evident SHA-256 blockchain from Genesis.',
-    linkText: 'Audit Ledger',
-    linkHref: '/audit'
-  },
-  {
-    id: 'step-6',
-    stepNum: '06',
-    title: 'Generate Official Statutory Report',
-    description: 'Download the comprehensive PDF or Excel SLA compliance report for committee records.',
-    linkText: 'Export Reports',
-    linkHref: '/reports'
-  }
-];
+const WALKTHROUGH_CHECKPOINTS: WalkthroughCheckpoint[] = TWO_MINUTE_STEPS.map((s, i) => ({
+  id: s.id,
+  stepNum: String(i + 1).padStart(2, '0'),
+  title: `${s.roleLabel}: ${s.title}`,
+  description: `${s.description} ${s.lookFor}`,
+  linkText: s.linkText,
+  linkHref: demoLoginHref(s.role, s.next),
+}));
 
 export default function HelpDrawer() {
   const [isOpen, setIsOpen] = useState(false);

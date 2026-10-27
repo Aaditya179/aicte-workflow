@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, Suspense } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { 
   FileCheck2, AlertTriangle, Clock, CheckCircle2, RotateCw, 
@@ -198,7 +199,7 @@ function DocumentsContent() {
     }
   };
 
-  const isOfficer = role === 'regional_officer' || role === 'bureau_officer' || role === 'admin';
+  const isOfficer = role === 'regional_officer' || role === 'bureau_officer';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-[#1C1917]">
@@ -232,12 +233,14 @@ function DocumentsContent() {
             ))}
           </div>
 
-          <button
-            onClick={() => setShowRegisterModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-[#C25E26] text-white hover:bg-[#A84A19] shadow-2xs transition cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Register Document
-          </button>
+          {(role === 'institution' || isOfficer) && (
+            <Link
+              href="/documents/upload"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-[#C25E26] text-white hover:bg-[#A84A19] shadow-2xs transition"
+            >
+              <Plus className="w-4 h-4" /> Upload Document
+            </Link>
+          )}
         </div>
       </div>
 
@@ -270,7 +273,7 @@ function DocumentsContent() {
                 {docs.map((d) => (
                   <tr key={d.id} className="hover:bg-[#FAF7F2]/60 transition">
                     <td className="py-3.5 px-4">
-                      <div className="font-semibold text-[#1C1917]">{d.title}</div>
+                      <Link href={`/documents/${d.id}`} className="font-semibold text-[#1C1917] hover:text-[#C25E26] hover:underline">{d.title}</Link>
                       <div className="text-xs text-stone-400 font-mono truncate max-w-xs">{d.storage_path}</div>
                     </td>
                     <td className="py-3.5 px-4">
@@ -298,17 +301,13 @@ function DocumentsContent() {
                     </td>
                     <td className="py-3.5 px-4">{getStatusBadge(d)}</td>
                     <td className="py-3.5 px-4 text-right space-x-2">
-                      {d.status !== 'renewed' && (
-                        <button
-                          onClick={() => {
-                            setRenewModalDoc(d);
-                            setRenewalTitle(`${d.title} (Renewed)`);
-                            setRenewalPath(`documents/renewals/${d.id}_renewed.pdf`);
-                          }}
-                          className="px-3 py-1 text-xs font-medium rounded-full bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] hover:bg-[#F5EBE1] transition cursor-pointer"
+                      {d.status !== 'renewed' && d.status !== 'under_verification' && (role === 'institution' || isOfficer) && (
+                        <Link
+                          href={`/documents/upload?${new URLSearchParams({ supersedes: d.id, doc_type: d.doc_type, title: `${d.title} (Renewed)` })}`}
+                          className="inline-block px-3 py-1 text-xs font-medium rounded-full bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] hover:bg-[#F5EBE1] transition"
                         >
                           Renew
-                        </button>
+                        </Link>
                       )}
                       {(d.status === 'under_verification' || d.supersedes_document_id) && isOfficer && (
                         <button

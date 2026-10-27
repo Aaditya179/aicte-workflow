@@ -6,8 +6,40 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AlertBell from './AlertBell';
 import SimulatedDateBanner from './SimulatedDateBanner';
-import { LogOut, User, FastForward, Globe, Menu, X } from 'lucide-react';
+import { LogOut, FastForward, Globe, Menu, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+
+type NavLink = { href: string; label: string };
+
+const L = {
+  dashboard: { href: '/dashboard', label: 'Dashboard' },
+  applications: { href: '/applications', label: 'Applications' },
+  calendar: { href: '/compliance-calendar', label: 'Calendar' },
+  evc: { href: '/evc', label: 'EVC Visits' },
+  availability: { href: '/evc/availability', label: 'Availability' },
+  undertakings: { href: '/undertakings', label: 'Undertakings' },
+  documents: { href: '/documents', label: 'Documents' },
+  alerts: { href: '/alerts', label: 'Alerts' },
+  reports: { href: '/reports', label: 'Reports' },
+  audit: { href: '/audit', label: 'Audit' },
+  adminHome: { href: '/admin', label: 'Overview' },
+  approvals: { href: '/admin/approvals', label: 'Approvals' },
+  rules: { href: '/admin/rules', label: 'Rules' },
+  users: { href: '/admin/users', label: 'Users' },
+  simulator: { href: '/admin/simulator', label: 'Time Simulator' },
+} satisfies Record<string, NavLink>;
+
+// Each role sees only the pages it can use; the administrator and auditor have no case pages (§15.0)
+const NAV_LINKS: Record<string, NavLink[]> = {
+  institution: [L.dashboard, L.applications, L.calendar, L.undertakings, L.documents, L.alerts],
+  scrutiny_officer: [L.dashboard, L.applications, L.undertakings, L.documents, L.alerts, L.reports],
+  regional_officer: [L.dashboard, L.applications, L.evc, L.undertakings, L.documents, L.alerts, L.reports],
+  evc_member: [L.dashboard, L.applications, L.evc, L.availability, L.alerts],
+  sac_shc_member: [L.dashboard, L.applications, L.alerts],
+  bureau_officer: [L.dashboard, L.applications, L.evc, L.undertakings, L.documents, L.alerts, L.reports, L.audit, L.approvals],
+  auditor: [L.audit, L.reports],
+  admin: [L.adminHome, L.rules, L.approvals, L.users, L.simulator, L.audit],
+};
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -33,8 +65,15 @@ export default function Navbar() {
     router.push('/login');
   };
 
-  // Don't render navbar on login or welcome page
-  if (pathname === '/login' || pathname === '/welcome') return null;
+  // Don't render navbar on login, MFA or welcome page
+  if (pathname === '/login' || pathname === '/welcome' || pathname === '/mfa') return null;
+
+  const links = NAV_LINKS[userRole || ''] || [];
+  const home = links[0]?.href || '/dashboard';
+  // The longest matching link is the active one, so /evc/availability does not also light up /evc
+  const active = links
+    .filter((l) => pathname === l.href || pathname?.startsWith(`${l.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <>
@@ -42,11 +81,11 @@ export default function Navbar() {
       {/* Invisible Navbar with Floating Buttons */}
       <header className="sticky top-0 z-40 w-full bg-transparent border-none pt-3 sm:pt-4 pb-2 px-4 sm:px-6 lg:px-8 pointer-events-none transition-all">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-          
+
           {/* Left: Floating Brand (no background pill) */}
           <div className="pointer-events-auto flex items-center">
             <Link
-              href="/applications"
+              href={home}
               className="inline-flex items-center transition hover:opacity-85"
               title="Nirikshan - AICTE Approval Workflow & Compliance Monitoring System"
             >
@@ -59,113 +98,22 @@ export default function Navbar() {
           </div>
 
           {/* Center: Floating Navigation Island */}
-          <nav className="pointer-events-auto hidden lg:flex items-center gap-1 bg-white/95 backdrop-blur-md border border-[#E8E2D8] px-2.5 py-1.5 rounded-full shadow-xs">
-            <Link
-              href="/dashboard"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname === '/dashboard'
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Dashboard') : 'Dashboard'}
-            </Link>
-            <Link
-              href="/applications"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/applications')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Applications') : 'Applications'}
-            </Link>
-            <Link
-              href="/evc"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/evc')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('EVC Visits') : 'EVC Visits'}
-            </Link>
-            <Link
-              href="/undertakings"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/undertakings')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Undertakings') : 'Undertakings'}
-            </Link>
-            <Link
-              href="/documents"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/documents')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Documents') : 'Documents'}
-            </Link>
-            <Link
-              href="/alerts"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/alerts')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Alerts') : 'Alerts'}
-            </Link>
-            <Link
-              href="/reports"
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                pathname?.startsWith('/reports')
-                  ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                  : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-              }`}
-            >
-              {mounted ? t('Reports') : 'Reports'}
-            </Link>
-
-            {(userRole === 'admin' || userRole === 'bureau_officer') && (
-              <>
-                <Link
-                  href="/audit"
-                  className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                    pathname?.startsWith('/audit')
-                      ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                      : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-                  }`}
-                >
-                  {mounted ? t('Audit') : 'Audit'}
-                </Link>
-                <Link
-                  href="/admin/rules"
-                  className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                    pathname?.startsWith('/admin/rules')
-                      ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                      : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-                  }`}
-                >
-                  {mounted ? t('Rules') : 'Rules'}
-                </Link>
-                <Link
-                  href="/admin/simulator"
-                  className={`px-3 py-1 rounded-full text-xs font-semibold transition inline-flex items-center gap-1 ${
-                    pathname?.startsWith('/admin/simulator')
-                      ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
-                      : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
-                  }`}
-                >
-                  <FastForward className="w-3.5 h-3.5 text-[#C25E26]" />
-                  <span>{mounted ? t('Time Simulator') : 'Time Simulator'}</span>
-                </Link>
-              </>
-            )}
+          <nav aria-label="Main" className="pointer-events-auto hidden lg:flex items-center gap-1 bg-white/95 backdrop-blur-md border border-[#E8E2D8] px-2.5 py-1.5 rounded-full shadow-xs">
+            {links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                aria-current={active === l.href ? 'page' : undefined}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition inline-flex items-center gap-1 ${
+                  active === l.href
+                    ? 'bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] shadow-2xs'
+                    : 'text-stone-600 hover:text-[#1C1917] hover:bg-stone-100/70'
+                }`}
+              >
+                {l.href === L.simulator.href && <FastForward className="w-3.5 h-3.5 text-[#C25E26]" />}
+                <span>{mounted ? t(l.label) : l.label}</span>
+              </Link>
+            ))}
           </nav>
 
           {/* Right: Floating Action Buttons */}
@@ -195,7 +143,7 @@ export default function Navbar() {
                 </div>
                 <div className="text-left">
                   <p className="text-xs font-semibold text-stone-800 leading-none">{userEmail.split('@')[0]}</p>
-                  <span className="text-[10px] text-stone-500 capitalize">{userRole?.replace('_', ' ')}</span>
+                  <span className="text-[10px] text-stone-500 capitalize">{userRole?.replace(/_/g, ' ')}</span>
                 </div>
               </div>
             )}
@@ -204,6 +152,7 @@ export default function Navbar() {
             <button
               onClick={handleLogout}
               title="Sign out"
+              aria-label="Sign out"
               className="p-2 rounded-full bg-white/95 backdrop-blur-md border border-[#E8E2D8] shadow-xs text-stone-500 hover:text-[#C25E26] hover:bg-[#FBF0E4] transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
@@ -214,6 +163,7 @@ export default function Navbar() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="lg:hidden p-2 rounded-full bg-white/95 backdrop-blur-md border border-[#E8E2D8] shadow-xs text-stone-700 hover:text-[#C25E26] transition cursor-pointer"
               aria-label="Toggle mobile navigation menu"
+              aria-expanded={mobileMenuOpen}
             >
               {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
@@ -223,81 +173,18 @@ export default function Navbar() {
         {/* Mobile Floating Dropdown Island */}
         {mobileMenuOpen && (
           <div className="pointer-events-auto lg:hidden mt-2 max-w-7xl mx-auto p-4 rounded-3xl bg-white/95 backdrop-blur-md border border-[#E8E2D8] shadow-xl flex flex-col gap-1.5">
-            <Link
-              href="/dashboard"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/applications"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Applications
-            </Link>
-            <Link
-              href="/evc"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              EVC Visits
-            </Link>
-            <Link
-              href="/undertakings"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Undertakings
-            </Link>
-            <Link
-              href="/documents"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Documents
-            </Link>
-            <Link
-              href="/alerts"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Alerts
-            </Link>
-            <Link
-              href="/reports"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-            >
-              Reports
-            </Link>
-            {(userRole === 'admin' || userRole === 'bureau_officer') && (
-              <>
-                <Link
-                  href="/audit"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-                >
-                  Audit Chain
-                </Link>
-                <Link
-                  href="/admin/rules"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition"
-                >
-                  Rule Builder
-                </Link>
-                <Link
-                  href="/admin/simulator"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition flex items-center gap-1.5"
-                >
-                  <FastForward className="w-3.5 h-3.5 text-[#C25E26]" />
-                  <span>Time Simulator</span>
-                </Link>
-              </>
-            )}
+            {links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-current={active === l.href ? 'page' : undefined}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 hover:bg-[#FBF0E4] hover:text-[#C25E26] transition flex items-center gap-1.5"
+              >
+                {l.href === L.simulator.href && <FastForward className="w-3.5 h-3.5 text-[#C25E26]" />}
+                <span>{mounted ? t(l.label) : l.label}</span>
+              </Link>
+            ))}
           </div>
         )}
       </header>

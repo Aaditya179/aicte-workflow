@@ -40,7 +40,7 @@ function MfaContent() {
       for (const f of data.all.filter((f) => f.status === 'unverified')) {
         await supabase.auth.mfa.unenroll({ factorId: f.id });
       }
-      const enrolled = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `ApprovalTrack ${Date.now()}` });
+      const enrolled = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Nirikshan ${Date.now()}` });
       if (enrolled.error) return setError(enrolled.error.message);
       setFactorId(enrolled.data.id);
       setQr(enrolled.data.totp.qr_code);
@@ -79,7 +79,7 @@ function MfaContent() {
             <p className="text-sm text-stone-800">1. Scan this code with Google Authenticator, Microsoft Authenticator or a similar app.</p>
             {qr && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={qr} alt="QR code to add ApprovalTrack to your authenticator app" className="mx-auto h-48 w-48 rounded-lg border border-[#E8E2D8] bg-white p-2" />
+              <img src={qr} alt="QR code to add Nirikshan to your authenticator app" className="mx-auto h-48 w-48 rounded-lg border border-[#E8E2D8] bg-white p-2" />
             )}
             {secret && (
               <p className="text-xs text-stone-600">Can’t scan? Enter this key: <code className="break-all font-mono text-stone-900">{secret}</code></p>

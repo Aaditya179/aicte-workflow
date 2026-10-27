@@ -24,6 +24,10 @@ const DICTIONARY: Record<string, string> = {
   'rules': 'नियम',
   'simulator': 'समय सिम्युलेटर',
   'time simulator': 'समय सिम्युलेटर',
+  'calendar': 'अनुपालन कैलेंडर',
+  'availability': 'उपलब्धता',
+  'approvals': 'अनुमोदन',
+  'users': 'उपयोगकर्ता',
   'sign out': 'साइन आउट',
 
   // Brand & Welcome

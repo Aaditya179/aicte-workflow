@@ -7,13 +7,13 @@ Rules:
 - Never invents facts not in input
 - Deficiency letter draft in formal statutory tone with deadline
 """
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 import base64
 import io
 import json
 import logging
 
-import anthropic
+import httpx
 
 from core.config import settings
 
@@ -77,76 +77,112 @@ All India Council for Technical Education (AICTE)"""
 
 ADVISORY = "Advisory only, final decisions rest with the competent authority."
 
-# Models that accept server-side refusal fallbacks in their "default" routing form
-_FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"}
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Groq accepts inline base64 images up to 4 MB
+MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+# A different key cannot fix a malformed request (400/404/413/422), so only these move to the failsafe key
+_RETRY_WITH_FAILSAFE = {401, 403, 429, 498, 500, 502, 503, 504}
 
-_client: Optional[anthropic.Anthropic] = None
+
+def _usable(key: Optional[str]) -> bool:
+    return bool(key) and not key.startswith(("mock_", "dummy_", "your_"))
+
+
+def _keys() -> List[Tuple[str, str]]:
+    """Default key first, failsafe second."""
+    keys = []
+    if _usable(settings.GROQ_API_KEY):
+        keys.append(("default", settings.GROQ_API_KEY))
+    if _usable(settings.GROQ_API_KEY_FAILSAFE):
+        keys.append(("failsafe", settings.GROQ_API_KEY_FAILSAFE))
+    return keys
 
 
 def llm_enabled() -> bool:
-    key = settings.LLM_API_KEY
-    return bool(key) and not key.startswith(("mock_", "dummy_"))
+    return bool(_keys())
 
 
-def _get_client() -> Optional[anthropic.Anthropic]:
-    global _client
-    if not llm_enabled():
-        return None
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=settings.LLM_API_KEY, timeout=90.0, max_retries=2)
-    return _client
+def _schema_instruction(schema: Dict[str, Any]) -> str:
+    return (
+        "\n\nRespond with a single JSON object and nothing else. It must have exactly these keys, "
+        "all present, matching this JSON Schema:\n" + json.dumps(schema)
+    )
+
+
+def _valid(result: Any, schema: Dict[str, Any]) -> bool:
+    if not isinstance(result, dict) or not all(k in result for k in schema.get("required", [])):
+        return False
+    types = {"string": str, "boolean": bool, "integer": int, "number": (int, float)}
+    for key, spec in schema.get("properties", {}).items():
+        expected = types.get(spec.get("type"))
+        value = result.get(key)
+        if expected and not isinstance(value, expected):
+            return False
+        if expected in (int, (int, float)) and isinstance(value, bool):
+            return False
+        if "enum" in spec and value not in spec["enum"]:
+            return False
+    return True
 
 
 def _complete(
     system: str,
     content: Union[str, List[Dict[str, Any]]],
     schema: Optional[Dict[str, Any]] = None,
-    effort: str = "low",
     max_tokens: int = 4000,
+    vision: bool = False,
+    temperature: float = 0.2,
 ) -> Optional[Union[str, Dict[str, Any]]]:
     """
-    One Claude call. Returns parsed JSON when a schema is given, otherwise text.
-    Returns None when no key is configured or the call fails, so callers fall back to templates.
+    One Groq chat completion, on the default key and then the failsafe key if the default
+    fails (auth, rate limit, outage). Returns parsed JSON when a schema is given, otherwise text.
+    Returns None when no key is configured or every key fails, so callers fall back to templates.
     """
-    client = _get_client()
-    if client is None:
+    keys = _keys()
+    if not keys:
         return None
-    output_config: Dict[str, Any] = {"effort": effort}
-    if schema:
-        output_config["format"] = {"type": "json_schema", "schema": schema}
-    kwargs: Dict[str, Any] = {
-        "model": settings.LLM_MODEL,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": content}],
-        "output_config": output_config,
+    payload: Dict[str, Any] = {
+        "model": settings.GROQ_VISION_MODEL if vision else settings.GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system + (_schema_instruction(schema) if schema else "")},
+            {"role": "user", "content": content},
+        ],
+        "max_completion_tokens": max_tokens,
+        "temperature": temperature,
     }
-    if settings.LLM_MODEL in _FALLBACK_MODELS:
-        kwargs["betas"] = ["server-side-fallback-2026-07-01"]
-        kwargs["fallbacks"] = "default"
-    try:
-        response = client.beta.messages.create(**kwargs)
-    except anthropic.APIConnectionError as e:
-        logger.error(f"LLM connection error: {e}")
-        return None
-    except anthropic.RateLimitError as e:
-        logger.error(f"LLM rate limited: {e}")
-        return None
-    except anthropic.APIStatusError as e:
-        logger.error(f"LLM API error {e.status_code}: {e.message}")
-        return None
+    if schema:
+        payload["response_format"] = {"type": "json_object"}
 
-    if response.stop_reason in ("refusal", "max_tokens"):
-        logger.warning(f"LLM stopped with {response.stop_reason} (request {response._request_id})")
-        return None
-    text = "".join(b.text for b in response.content if b.type == "text").strip()
-    if not schema:
-        return text
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.error(f"LLM returned invalid JSON (request {response._request_id})")
-        return None
+    for name, key in keys:
+        try:
+            resp = httpx.post(GROQ_URL, headers={"Authorization": f"Bearer {key}"}, json=payload, timeout=60.0)
+        except httpx.HTTPError as e:
+            logger.error(f"Groq connection error on {name} key: {e}")
+            continue
+        if resp.status_code != 200:
+            logger.error(f"Groq API error {resp.status_code} on {name} key: {resp.text[:300]}")
+            if resp.status_code in _RETRY_WITH_FAILSAFE:
+                continue
+            return None
+        choice = (resp.json().get("choices") or [{}])[0]
+        if choice.get("finish_reason") == "length":
+            logger.warning(f"Groq output truncated on {name} key")
+            return None
+        text = ((choice.get("message") or {}).get("content") or "").strip()
+        if name != "default":
+            logger.warning("Groq call served by the failsafe key")
+        if not schema:
+            return text or None
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            logger.error("Groq returned invalid JSON")
+            return None
+        if not _valid(result, schema):
+            logger.error("Groq JSON did not match the schema")
+            return None
+        return result
+    return None
 
 
 SUMMARY_SYSTEM = (
@@ -165,7 +201,6 @@ def summarize_case(context: Dict[str, Any]) -> Dict[str, Any]:
     text = _complete(
         SUMMARY_SYSTEM,
         "Case record (JSON):\n" + json.dumps(context, default=str, sort_keys=True),
-        effort="medium",
         max_tokens=2000,
     )
     mode = "production"
@@ -199,7 +234,6 @@ def draft_deficiency_letter(context: Dict[str, Any]) -> Dict[str, Any]:
     draft = _complete(
         DEFICIENCY_SYSTEM,
         "Letter details (JSON):\n" + json.dumps(context, default=str, sort_keys=True),
-        effort="medium",
     )
     mode = "production"
     # The officer's recorded deficiencies and the deadline must survive verbatim
@@ -226,7 +260,7 @@ POLISH_SYSTEM = (
 
 def polish_text(text: str) -> Dict[str, Any]:
     """Suggest better wording for an officer's draft. Never sends anything."""
-    polished = _complete(POLISH_SYSTEM, text, effort="low")
+    polished = _complete(POLISH_SYSTEM, text)
     return {
         "text": polished or text,
         "mode": "production" if polished else ("mock" if not llm_enabled() else "mock_fallback"),
@@ -259,7 +293,7 @@ def nl_query_filter(question: str, regions: List[str], stages: List[str]) -> Opt
         "pending, submitted, verified, active, expired, renewed. Use an empty string for any field the "
         "question does not mention, false for overdue and 0 for days_overdue_gte unless asked."
     )
-    return _complete(system, question, schema=NL_FILTER_SCHEMA, effort="low", max_tokens=1000)
+    return _complete(system, question, schema=NL_FILTER_SCHEMA, max_tokens=1000, temperature=0)
 
 
 OCR_SCHEMA = {
@@ -289,20 +323,38 @@ def ocr_expiry(file_bytes: bytes, media_type: str) -> Dict[str, Any]:
     Suggest the expiry date of an uploaded document (§15.3). The result is only a suggestion;
     valid_until is set when a person confirms it.
     """
+    result = None
     if media_type == "application/pdf":
-        block = {"type": "document", "source": {"type": "base64", "media_type": media_type,
-                                                "data": base64.standard_b64encode(file_bytes).decode()}}
-    else:
-        block = {"type": "image", "source": {"type": "base64", "media_type": media_type,
-                                             "data": base64.standard_b64encode(file_bytes).decode()}}
-    result = _complete(OCR_SYSTEM, [block, {"type": "text", "text": "Extract the fields."}],
-                       schema=OCR_SCHEMA, effort="low", max_tokens=2000)
+        # Groq models take images, not PDFs: read the PDF's text layer instead (scanned PDFs have none)
+        text = _pdf_text(file_bytes)
+        if text:
+            result = _complete(OCR_SYSTEM, "Document text:\n" + text[:20000],
+                               schema=OCR_SCHEMA, max_tokens=1000, temperature=0)
+    elif len(file_bytes) <= MAX_INLINE_IMAGE_BYTES:
+        data_url = f"data:{media_type};base64,{base64.standard_b64encode(file_bytes).decode()}"
+        result = _complete(OCR_SYSTEM, [{"type": "text", "text": "Extract the fields."},
+                                        {"type": "image_url", "image_url": {"url": data_url}}],
+                           schema=OCR_SCHEMA, max_tokens=1000, vision=True, temperature=0)
     if result is not None:
         result["mode"] = "production"
         return result
     mock = _mock_ocr(file_bytes, media_type)
     mock["mode"] = "mock" if not llm_enabled() else "mock_fallback"
     return mock
+
+
+def _pdf_text(file_bytes: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        logger.warning("pypdf is not installed; PDF OCR suggestions are unavailable")
+        return ""
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+        return "\n".join((page.extract_text() or "") for page in reader.pages[:10]).strip()
+    except Exception as e:
+        logger.warning(f"Could not read PDF text: {e}")
+        return ""
 
 
 def _mock_ocr(file_bytes: bytes, media_type: str) -> Dict[str, Any]:

@@ -27,11 +27,8 @@ interface SchedulerRun {
 }
 
 interface ApplicationCaseB {
-  id: string;
   application_no: string;
   current_stage: string;
-  status: string;
-  submitted_at: string;
   stage_entered_at: string;
   due_at: string;
 }
@@ -41,8 +38,8 @@ interface AlertEntry {
   kind: string;
   level: number;
   severity: string;
-  message: string;
   status: string;
+  target_role: string | null;
   fired_at: string;
 }
 
@@ -58,23 +55,18 @@ function SimulatorContent() {
 
   const loadData = async () => {
     setLoading(true);
-    const [clockRes, runsRes, appsRes] = await Promise.all([
+    // The admin has no case access, so Case B timing comes from a dedicated admin endpoint
+    const [clockRes, runsRes, caseRes] = await Promise.all([
       fetchApi<ClockStatus>('/admin/clock'),
       fetchApi<SchedulerRun[]>('/admin/scheduler/runs?limit=8'),
-      fetchApi<any[]>('/applications?search=DEMO-CASE-B'),
+      fetchApi<{ case: ApplicationCaseB | null; alerts: AlertEntry[] }>('/admin/clock/demo-case'),
     ]);
 
     if (clockRes.data) setClockStatus(clockRes.data);
     if (runsRes.data) setSchedulerRuns(runsRes.data);
-
-    if (appsRes.data && appsRes.data.length > 0) {
-      const b = appsRes.data[0];
-      setCaseB(b);
-      // Fetch alerts for Case B
-      const alertsRes = await fetchApi<AlertEntry[]>(`/alerts?limit=50`);
-      if (alertsRes.data) {
-        setCaseBAlerts(alertsRes.data.filter((a: any) => a.entity_id === b.id));
-      }
+    if (caseRes.data) {
+      setCaseB(caseRes.data.case);
+      setCaseBAlerts(caseRes.data.alerts);
     }
     setLoading(false);
   };
@@ -319,12 +311,9 @@ function SimulatorContent() {
           </div>
 
           {caseB && (
-            <Link
-              href={`/applications/${caseB.id}`}
-              className="text-xs text-[#C25E26] font-semibold hover:underline inline-flex items-center gap-1"
-            >
-              Open Application <ArrowRight className="w-3 h-3" />
-            </Link>
+            <span className="text-xs text-stone-500">
+              Sign in as the regional officer to open {caseB.application_no}
+            </span>
           )}
         </div>
 
@@ -396,7 +385,9 @@ function SimulatorContent() {
                       <strong className="text-stone-900 capitalize">
                         {a.kind} {a.level > 0 && `(Level ${a.level})`}
                       </strong>
-                      <span className="text-stone-600">— {a.message}</span>
+                      {a.target_role && (
+                        <span className="text-stone-600">sent to {a.target_role.replace(/_/g, ' ')}</span>
+                      )}
                     </div>
                     <span className="text-[10px] text-stone-400">
                       {new Date(a.fired_at).toLocaleTimeString()}

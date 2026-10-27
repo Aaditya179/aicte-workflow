@@ -61,6 +61,10 @@ def send_email(
         logger.info(f"[MOCK RESEND] Sent to: {to_email} | Subject: {subject} | ID: {msg_id}")
         return {"id": msg_id, "status": "sent", "mode": "mock"}
 
+    if settings.DEMO_EMAIL_REDIRECT and to_email.lower() != settings.DEMO_EMAIL_REDIRECT.lower():
+        subject = f"[for {to_email}] {subject}"
+        to_email = settings.DEMO_EMAIL_REDIRECT
+
     try:
         response = httpx.post(
             "https://api.resend.com/emails",

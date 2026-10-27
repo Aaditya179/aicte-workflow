@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { API_BASE_URL, fetchApi } from '@/lib/api';
 import {
   Building2,
   ShieldCheck,
@@ -81,9 +82,45 @@ const DEMO_ROLES: DemoRole[] = [
     roleLabel: 'Administrator',
     title: 'System Administrator',
     email: 'admin@demo.sih',
-    description: 'Simulate time-travel, edit SLA thresholds, and verify cryptographic audit hashes.',
+    description: 'Run the demo clock, propose SLA and rule changes, and manage users. No access to case data.',
     icon: Settings,
     badgeColor: 'bg-stone-100 text-stone-700 border-stone-300'
+  },
+  {
+    role: 'admin2',
+    roleLabel: 'Second Administrator',
+    title: 'Second Administrator',
+    email: 'admin2@demo.sih',
+    description: 'Approves rule and timeline changes proposed by the first administrator.',
+    icon: Settings,
+    badgeColor: 'bg-stone-100 text-stone-700 border-stone-300'
+  },
+  {
+    role: 'mfa_officer',
+    roleLabel: 'Regional Officer (MFA)',
+    title: 'Western Regional Officer, MFA',
+    email: 'mfa.officer@demo.sih',
+    description: 'Same access as the regional officer, with the authenticator app (TOTP) step on screen.',
+    icon: Lock,
+    badgeColor: 'bg-stone-100 text-stone-800 border-stone-300'
+  },
+  {
+    role: 'sac_shc_member',
+    roleLabel: 'SAC/SHC Member',
+    title: 'SAC/SHC Committee Member',
+    email: 'sacshc@demo.sih',
+    description: 'Sees only the cases assigned to them and records committee recommendations.',
+    icon: ClipboardList,
+    badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
+  },
+  {
+    role: 'auditor',
+    roleLabel: 'Auditor',
+    title: 'Internal Auditor',
+    email: 'auditor@demo.sih',
+    description: 'Read-only audit trail, document access logs and reports.',
+    icon: Eye,
+    badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200'
   }
 ];
 
@@ -102,19 +139,31 @@ export default function LoginPage() {
     if (roleKey) setActiveSigningRole(roleKey);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: targetEmail,
-        password: targetPassword,
+      // Sign in through the API so failed attempts are rate limited and lock the account (§15.8)
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, password: targetPassword }),
       });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body.detail === 'string' ? body.detail : 'Invalid email or password');
+      }
 
+      const { error } = await supabase.auth.setSession({
+        access_token: body.access_token,
+        refresh_token: body.refresh_token,
+      });
       if (error) {
         throw new Error(error.message);
       }
 
-      if (data.session) {
-        // Redirect to dashboard on success
-        router.push('/dashboard');
-      }
+      // Officers without a completed MFA step go through /mfa first.
+      // ?next= (same-site paths only) lets the welcome page's steps open the right screen.
+      const requested = new URLSearchParams(window.location.search).get('next') || '';
+      const next = requested.startsWith('/') && !requested.startsWith('//') ? requested : '/dashboard';
+      const me = await fetchApi<{ mfa_required: boolean }>('/me');
+      router.push(me.data?.mfa_required ? `/mfa?next=${encodeURIComponent(next)}` : next);
     } catch (err: any) {
       setErrorMessage(err.message || 'Login failed. Please check credentials or run the seed script.');
     } finally {

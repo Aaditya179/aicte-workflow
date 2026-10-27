@@ -210,7 +210,7 @@ async def get_regional_dashboard(
 
 @router.get("/officer")
 async def get_officer_dashboard(
-    user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "evc_member", "bureau_officer"]))
+    user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "evc_member", "sac_shc_member", "bureau_officer"]))
 ):
     """
     Officer Dashboard (Section 7.2):
@@ -338,8 +338,37 @@ async def get_admin_dashboard(user: AuthenticatedUser = Depends(require_role(["a
     roles: dict = {}
     for p in _supabase.table("profiles").select("role").execute().data or []:
         roles[p["role"]] = roles.get(p["role"], 0) + 1
-    runs = _supabase.table("scheduler_runs").select("started_at, finished_at, clock_now, alerts_created, escalations_created") \
+    runs = _supabase.table("scheduler_runs").select("started_at, finished_at, clock_now, alerts_created, escalations_created, errors") \
         .order("started_at", desc=True).limit(5).execute().data or []
+
+    names = {p["user_id"]: p["full_name"] for p in
+             _supabase.table("profiles").select("user_id, full_name").in_("role", ["admin"]).execute().data or []}
+    pending = _supabase.table("approval_requests").select("id, payload, requested_by, created_at") \
+        .eq("kind", "rule_change").eq("status", "pending").order("created_at", desc=True).limit(5).execute().data or []
+    pending_rows = [{"id": r["id"], "table": (r.get("payload") or {}).get("table"),
+                     "requested_by_name": names.get(r.get("requested_by")), "created_at": r["created_at"]} for r in pending]
+
+    # Default (national, all-stage) chain: the one most cases follow
+    chains = _supabase.table("escalation_chains").select("scope, region_id, levels").execute().data or []
+    default_chain = next((c for c in chains if not c.get("region_id")), chains[0] if chains else None)
+
+    # Delivery totals per channel over the last 7 days. Counts only, no message content.
+    since = (clock.now() - timedelta(days=7)).isoformat()
+    deliveries: Dict[str, Dict[str, int]] = {}
+    for n in _supabase.table("notifications").select("channel, delivery_status, provider_ref") \
+            .gte("created_at", since).limit(5000).execute().data or []:
+        ch = deliveries.setdefault(n["channel"], {"delivered": 0, "sent": 0, "failed": 0, "queued": 0, "read": 0, "simulated": 0})
+        status_ = n.get("delivery_status") or "queued"
+        ch[status_] = ch.get(status_, 0) + 1
+        if (n.get("provider_ref") or "").startswith("simulated:"):
+            ch["simulated"] += 1
+
+    # The administrator's own configuration activity; case actions are excluded
+    activity = _supabase.table("audit_log").select("seq, action, entity_type, actor_id, created_at, reason") \
+        .eq("actor_role", "admin").order("seq", desc=True).limit(8).execute().data or []
+    activity = [{**a, "actor_name": names.get(a.get("actor_id"))} for a in activity]
+
+    from services import approvals as approvals_service
     return {
         "users_by_role": roles,
         "active_sla_rules": count("sla_rules", is_active=True),
@@ -347,6 +376,12 @@ async def get_admin_dashboard(user: AuthenticatedUser = Depends(require_role(["a
         "workflow_templates": count("workflow_templates"),
         "pending_rule_changes": _supabase.table("approval_requests").select("id", count="exact")
             .eq("kind", "rule_change").eq("status", "pending").limit(1).execute().count or 0,
+        "pending_rule_change_list": pending_rows,
+        "maker_checker_for_overrides": approvals_service.overrides_need_approval(),
+        "default_escalation_chain": default_chain.get("levels") if default_chain else [],
+        "deliveries_7d": deliveries,
+        "recent_admin_activity": activity,
         "recent_scheduler_runs": runs,
         "simulated_now": clock.now().isoformat(),
+        "clock_offset_days": round(clock.get_offset_days(), 2),
     }

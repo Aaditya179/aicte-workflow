@@ -1,173 +1,314 @@
-# Nirikshan (SIH26262)
+<div align="center">
 
-> **AICTE Workflow Automation, SLA Monitoring & Statutory Governance Platform**
-> 
-> *Advisory only — final decisions rest with the competent authority. Designed to align with the Digital Personal Data Protection Act, 2023.*
+<img src="frontend/public/nirikshan-header-logo.png" alt="Nirikshan" width="420" />
 
-Nirikshan provides end-to-end statutory workflow automation, real-time SLA countdowns, multi-channel escalation before pendency breaches occur, and a tamper-evident cryptographic audit log for all AICTE approval stages.
+### AICTE approval workflow, SLA monitoring and compliance governance
+
+Smart India Hackathon · Problem statement **SIH26262**
+
+[![Live demo](https://img.shields.io/badge/Live_demo-nirikshan--six.vercel.app-C25E26?style=for-the-badge&logo=vercel&logoColor=white)](https://nirikshan-six.vercel.app)
+[![API](https://img.shields.io/badge/API-Render-46E3B7?style=for-the-badge&logo=render&logoColor=black)](https://nirikshan-api-p3jg.onrender.com/docs)
+
+![Next.js](https://img.shields.io/badge/Next.js_16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React_19-20232A?logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS_4-06B6D4?logo=tailwindcss&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Python](https://img.shields.io/badge/Python_3.12-3776AB?logo=python&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq_LLM-F55036)
+
+</div>
+
+> *Advisory only: final decisions rest with the competent authority. Designed to align with the Digital Personal Data Protection Act, 2023.*
+
+Nirikshan takes an AICTE approval application from submission to final decision. It tracks every stage against its statutory deadline, warns the people responsible before a deadline is missed, escalates when it is, and records every action in a tamper-evident audit trail.
 
 ---
 
-## 1. System Architecture
+## Live deployment
+
+| | Link |
+| :--- | :--- |
+| **Web app** | **https://nirikshan-six.vercel.app** (opens the welcome page with the 2-minute walkthrough) |
+| **API** | https://nirikshan-api-p3jg.onrender.com · interactive docs at [`/docs`](https://nirikshan-api-p3jg.onrender.com/docs) · health at [`/health`](https://nirikshan-api-p3jg.onrender.com/health) |
+
+> The API runs on Render's free plan, which sleeps after 15 idle minutes. The first request after that takes up to a minute; open the site a minute before a demo.
+
+Every demo account uses the password `password123`, and the welcome and login pages sign you in with one click.
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Try it in 2 minutes](#try-it-in-2-minutes)
+- [Demo accounts](#demo-accounts)
+- [Escalation matrix](#escalation-matrix)
+- [Security and privacy](#security-and-privacy)
+- [Project structure](#project-structure)
+- [Local setup](#local-setup)
+- [Deployment](#deployment)
+
+---
+
+## Features
+
+**Workflow and deadlines**
+- Configurable approval workflows (Scrutiny → EVC → SAC/SHC → final decision), with each stage owned by one role and assigned to the least-loaded officer.
+- A live SLA countdown on every stage, a delay-risk score (0–100) per application and a compliance health score (0–100) per institution.
+- A compliance calendar for institutions: undertakings, document expiries and upcoming deadlines in one place.
+
+**Alerts and escalation**
+- Reminders before a deadline, overdue alerts on it, and escalation through up to three levels after it.
+- Delivery by in-app notification (live, through Supabase Realtime), email (Resend), SMS and WhatsApp (Twilio), tracked per recipient and channel, with fallback to the next channel on critical alerts.
+- Alerts can be acknowledged from a signed email link without signing in.
+
+**AI assistance (advisory only)**
+- Case summaries, deficiency letter drafts and wording polish for officers.
+- Natural-language questions over the caseload.
+- Reads expiry dates from uploaded leases and certificates (OCR), for a person to confirm.
+- Runs on Groq with a failover key, and falls back to a mock mode when no key is set.
+
+**Decision Assurance**
+- Checks a final decision before it is committed: missing documents, conflicting findings, unusual patterns. Each flag must be acknowledged or overridden with a reason.
+- Re-checks committed decisions when a supporting document later expires.
+
+**Governance**
+- A SHA-256 hash-chained audit trail, verifiable end to end from the audit page.
+- Maker-checker: rule and timeline changes apply only after a second administrator approves.
+- Reports in JSON, PDF and Excel: pendency, overdue summary and audit.
+- A time simulator for the demo: move the clock forward and watch deadlines, alerts and escalations play out.
+- English and Hindi interface.
+
+---
+
+## Tech stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | Next.js 16 (App Router, Cache Components), React 19, TypeScript, Tailwind CSS 4, lucide-react |
+| **Backend** | FastAPI, Uvicorn, Pydantic 2, APScheduler, httpx, `limits` (rate limiting) |
+| **Database and auth** | Supabase: PostgreSQL with row-level security, Auth with TOTP MFA, Realtime, private Storage |
+| **AI** | Groq: `openai/gpt-oss-120b` for text, `qwen/qwen3.8-27b` for images; pypdf and Pillow for document input |
+| **Messaging** | Resend (email), Twilio (SMS, WhatsApp); simulated when not configured |
+| **Reports** | ReportLab (PDF), openpyxl (Excel) |
+| **Hosting** | Vercel (frontend), Render (API), Supabase (data) |
+| **Quality** | pytest suite against a live Supabase project; GitHub Actions CI with `pip-audit`, `npm audit` and a production build |
+
+---
+
+## Architecture
 
 ```mermaid
 graph TD
-  User([Browser / Mobile Client]) -->|Next.js App Router| Frontend[Frontend: Nirikshan Next.js]
-  Frontend -->|REST API / Bearer JWT| FastAPI[Backend: FastAPI Service]
-  Frontend -->|Auth / Realtime / Signed Storage| Supabase[(Supabase Platform)]
-  
-  subgraph Backend Core Services
-    FastAPI --> Engine[Workflow Engine]
-    FastAPI --> Risk[Delay-Risk Engine 0-100]
-    FastAPI --> Health[Compliance Health Score 0-100]
-    FastAPI --> Audit[Cryptographic SHA-256 Audit Chain]
-    FastAPI --> AI[AI Advisory Assistant: Claude/Anthropic]
-    FastAPI --> Rules[Dynamic SLA Rules Engine]
+  User([Browser]) -->|Next.js on Vercel| Frontend[Frontend]
+  Frontend -->|REST, bearer JWT| API[FastAPI on Render]
+  Frontend -->|Auth, Realtime| Supabase[(Supabase: Postgres, Auth, Realtime, Storage)]
+  API --> Supabase
+
+  subgraph Backend services
+    API --> Engine[Workflow engine]
+    API --> Rules[SLA rules and escalation chains]
+    API --> Scores[Delay risk and health scores]
+    API --> Assurance[Decision Assurance]
+    API --> Audit[SHA-256 audit chain]
+    API --> AI[AI assistant: Groq]
   end
 
-  subgraph Automation & Background
-    Sched[APScheduler] -->|Every 5 mins| Watchdog[SLA Breach & Escalation Watchdog]
-    Sched -->|Cron| Recompute[Health & Risk Score Recomputation]
-    Watchdog -->|Multi-Channel| Notifier[Notifier Service: Email / SMS / In-App]
+  subgraph Monitoring
+    Sched[Scheduler: every minute, or on a simulated clock move] --> Watchdog[Deadline and escalation checks]
+    Watchdog --> Notifier[Notifier: in-app, email, SMS, WhatsApp]
+    Notifier --> Resend[Resend]
+    Notifier --> Twilio[Twilio]
   end
 
-  subgraph External Integration Layer
-    Engine --> Adapter[AICTE System Adapter: Mock / Live Stub]
-  end
+  Engine --> Adapter[AICTE system adapter: mock or live stub]
 ```
 
 ---
 
-## 2. Evaluation Demo Credentials
+## Try it in 2 minutes
 
-All evaluation accounts use the standard password: `password123`. Click any persona on the **[Welcome Page](http://localhost:3000/welcome)** to sign in automatically:
+The same steps are on the [welcome page](https://nirikshan-six.vercel.app/welcome), where each one signs you in as the right person and opens the right screen.
 
-| Role | Demo Email | Scope & Purpose |
+| # | Sign in as | Do this | Look for |
+| :-: | :--- | :--- | :--- |
+| 1 | Institution | Open **New application**, keep the Scrutiny and EVC workflow, and submit. | It starts in Scrutiny with a due date 15 days away. |
+| 2 | Scrutiny officer | Open the newest application, read the AI case summary, press **Advance to EVC Queue**. | The stage tracker moves to the EVC queue, owned by the regional officer. |
+| 3 | Admin | In the **Time Simulator**, press **+7 days**. | Case B goes from due in 2 days to 5 days overdue, and its escalations fire. |
+| 4 | Regional officer | Open **Alerts**, find `DEMO-CASE-B` at level 2, press **Delivery**. | In-app, email and SMS delivery for each recipient. |
+| 5 | Institution | Download the [sample lease](https://nirikshan-six.vercel.app/samples/sample_lease.png) and upload it as a lease renewal. | The expiry date (31 March 2028) is read from the document; accept it to save. |
+| 6 | Bureau officer | Open the **Audit** trail and press **Verify integrity**. | Every entry checks out, and your actions from steps 1–5 are listed. |
+
+The admin can press **Reset** in the simulator to return to the real date.
+
+---
+
+## Demo accounts
+
+Password for every account: `password123`.
+
+| Role | Email | What they do |
 | :--- | :--- | :--- |
-| **Institution** | `institution@demo.sih` | Submit applications, track live health score, resolve deficient undertakings |
-| **Scrutiny Officer** | `scrutiny@demo.sih` | Examine submissions, verify documentation, record deficiencies |
-| **Regional Officer** | `regional@demo.sih` | Monitor pendency in Western region, rebalance officer workloads, queue EVCs |
-| **EVC Member** | `evc@demo.sih` | Review on-site visit schedule, conduct inspection, upload EVC reports |
-| **Regional Officer (MFA)** | `mfa.officer@demo.sih` | Same as the regional officer, but signs in with an authenticator app (TOTP) on screen |
-| **EVC Members** | `evc2@demo.sih`, `evc3@demo.sih` | Further EVC members based in Pune and Ahmedabad, for suggested visit dates |
-| **SAC/SHC Member** | `sacshc@demo.sih` | Sees only the cases assigned to them |
-| **Bureau Officer** | `bureau@demo.sih` | National overview, Level-3 escalations, final decisions with Decision Assurance, approves overrides |
-| **Administrator** | `admin@demo.sih` | Proposes SLA and rule changes, runs the time simulator, manages users. No access to case data |
-| **Second Administrator** | `admin2@demo.sih` | Approves the first administrator's rule changes (maker-checker) |
+| **Institution** | `institution@demo.sih` | Submits applications, tracks deadlines and health score, uploads documents and undertakings |
+| **Scrutiny officer** | `scrutiny@demo.sih` | Examines submissions, records deficiencies, advances cases |
+| **Regional officer** | `regional@demo.sih` | Watches pendency in the Western region, manages the EVC queue, receives level 2 escalations |
+| **Regional officer (MFA)** | `mfa.officer@demo.sih` | The same, but signs in with an authenticator app (TOTP) |
+| **EVC members** | `evc@demo.sih`, `evc2@demo.sih`, `evc3@demo.sih` | Visit schedules, inspections and reports; availability drives suggested visit dates |
+| **SAC/SHC member** | `sacshc@demo.sih` | Sees only the cases assigned to them |
+| **Bureau officer** | `bureau@demo.sih` | National overview, level 3 escalations, final decisions with Decision Assurance, approves overrides |
+| **Administrator** | `admin@demo.sih` | Proposes SLA and rule changes, runs the time simulator, manages users; no access to case data |
+| **Second administrator** | `admin2@demo.sih` | Approves the first administrator's rule changes (maker-checker) |
 | **Auditor** | `auditor@demo.sih` | Read-only audit trail, document access logs and reports |
 
-Seeded v2 cases (§15.9): **G** (final decision with four assurance flags), **H** (committed decision whose lease expires in 10 days, so a +15 day jump raises a post-decision flag), **I** (upload `backend/seed/data/sample_lease.png`, also served at `/samples/sample_lease.png`, and accept the suggested expiry date), **J** (the scrutiny officer's next decision raises an anomaly flag).
+**Seeded cases:**
+- **B:** in Scrutiny and due in 2 days, used by the walkthrough.
+- **G:** a final decision with four assurance flags.
+- **H:** a committed decision whose lease expires in 10 days, so a +15 day jump raises a post-decision flag.
+- **I:** upload the sample lease and accept the suggested expiry date.
+- **J:** the scrutiny officer's next decision raises an anomaly flag.
 
 ---
 
-## 3. "Try It in 2 Minutes" Judge Walkthrough
+## Escalation matrix
 
-To verify the complete system end-to-end using pre-seeded test cases:
-
-1. **Submit Application as Institution**:
-   - Log in as `institution@demo.sih`, open **Applications**, and submit an approval request.
-   - Observe the initial statutory stage countdown (SLA timer).
-2. **Advance Application as Regional Officer**:
-   - Switch to `regional@demo.sih`, open the case, verify and advance past Scrutiny.
-   - Watch the interactive stage tracker advance immediately to **EVC Queue**.
-3. **Simulate +7 Days Time-Travel**:
-   - Switch to `admin@demo.sih`, open **Time Simulator** at `/admin/simulator`, and advance time by **+7 days**.
-4. **Inspect Automated Overdue Alerts & Escalations**:
-   - Switch back to `regional@demo.sih` and check **Alerts**. Case B turns Critical and displays an automated **Level 2 Escalation** (dispatched to Regional Officer via Email, SMS, and in-app).
-5. **Renew Expiring Document**:
-   - Switch to `institution@demo.sih`, open **Documents** to review the lease expiring in 28 days, and upload a renewed PDF lease agreement.
-6. **Verify Cryptographic Audit Integrity**:
-   - Switch to `bureau@demo.sih`, navigate to `/audit`, and click **Verify Integrity**.
-   - The engine validates the unbroken SHA-256 hash sequence from the genesis block to the latest mutation.
-
----
-
-## 4. Multi-Channel Escalation Matrix
-
-When statutory deadlines approach or expire, notifications escalate according to configurable policies:
-
-| Escalation Level | Trigger Window | Recipients | Delivery Channels |
+| Level | When | Who | Channels |
 | :--- | :--- | :--- | :--- |
-| **Level 1** | 0 days overdue (Day 0) | Assigned officer | In-app, email |
-| **Level 2** | 3 days overdue (Day 3) | Regional officer | In-app, email, SMS |
-| **Level 3** | 7 days overdue (Day 7) | Bureau officers | In-app, email, SMS, WhatsApp |
+| **Level 1** | On the due date | Assigned officer | In-app, email |
+| **Level 2** | 3 days overdue | Regional officer | In-app, email, SMS |
+| **Level 3** | 7 days overdue | Bureau officers | In-app, email, SMS, WhatsApp |
 
-Timelines and chains are settings an administrator edits, with a second administrator approving each change. Email, SMS and WhatsApp carry only the reference number, the alert type and a signed link. Every delivery is tracked per recipient and channel (`/alerts/<id>`); a failed delivery on a critical alert falls back to the next channel. Providers that are not configured (Resend, Twilio) are simulated and marked as such.
-
----
-
-## 5. Security & Privacy Architecture
-
-### What the prototype shows
-
-- **Tamper-evident audit chain**: every state transition, document action and rule change is a SHA-256 linked entry; `/audit` verifies the whole chain.
-- **Role separation**: the administrator edits rules and timelines and manages users, but has no route to case data or case actions. The auditor is read-only.
-- **MFA and short sessions**: officer routes reject sessions that have not completed TOTP (`DEMO_MFA_BYPASS` lets the other demo officers skip it; it must be off in any real deployment). Login, OTP and AI endpoints are rate limited, and repeated failed logins lock the account.
-- **Maker-checker**: rule and timeline changes apply only after a second administrator approves; optionally, case reverts and assurance overrides need a bureau officer's approval.
-- **Document protection**: uploads are limited to PDF, PNG and JPG up to 10 MB (checked by content), hashed with SHA-256, kept in a private storage bucket, and served only through links that expire in 5 minutes. Every upload, view, download and verification is logged, and 10 downloads in 5 minutes by one user raises an alert to the bureau.
-- **Advisory-only AI**: models summarise, draft, polish wording and suggest expiry dates. A person confirms every date and sends every message; AI never approves, rejects or advances a case.
-- **Privacy**: emails and phone numbers are masked in list views and revealed (and audited) on the detail view. Exports are limited to officers and auditors and every export is logged. Designed to align with the Digital Personal Data Protection Act, 2023.
-
-### Production design only (not built)
-
-SSO with AICTE systems, maker-checker on every sensitive action, malware scanning (a marked hook exists in `services/storage.py`), alerts on unusual login locations, backups with tested restore, disaster recovery, centralised logging and monitoring, VAPT, government-approved hosting, and retention rules agreed with AICTE.
+Administrators edit timelines and chains, and a second administrator approves each change. Unacknowledged alerts escalate again. Email, SMS and WhatsApp messages carry only the reference number, the alert type and a signed link.
 
 ---
 
-## 6. Local Setup & Execution
+## Security and privacy
 
-### Prerequisites
-- Node.js 20.9+ & npm (required by Next.js 16)
-- Python 3.12
-- Running Supabase project (or local Supabase CLI)
+**In the prototype**
+- **Tamper-evident audit chain:** every transition, document action and rule change is a SHA-256 linked entry, verifiable from `/audit`.
+- **Role separation:** the administrator manages rules and users but has no route to case data; the auditor is read-only.
+- **MFA:** officer routes require a TOTP-verified session. `DEMO_MFA_BYPASS` lets demo officers skip it, and must be off in a real deployment.
+- **Rate limits and lockout:** login, OTP and AI endpoints are rate limited, and repeated failed logins lock the account.
+- **Maker-checker:** rule and timeline changes need a second administrator; case reverts and assurance overrides can require a bureau officer's approval.
+- **Document protection:**
+  - Uploads are limited to PDF, PNG or JPG up to 10 MB, checked by content.
+  - Each file is hashed with SHA-256 and kept in a private bucket.
+  - Files are served only through links that expire after 5 minutes.
+  - Every access is logged, and bulk downloads alert the bureau.
+- **Advisory-only AI:** it summarises, drafts and suggests. A person confirms every date and sends every message, and the AI never approves, rejects or advances a case.
+- **Privacy:** contact details are masked in lists and revealed (and audited) on detail views; exports are limited and logged.
 
-### Backend Execution
+**Production design only (not built):**
+- SSO with AICTE systems, and maker-checker on every sensitive action.
+- Malware scanning; a hook is marked in `services/storage.py`.
+- Alerts on unusual login locations.
+- Backups with tested restore, and disaster recovery.
+- Central logging and monitoring, and VAPT.
+- Government-approved hosting, and retention rules agreed with AICTE.
+
+---
+
+## Project structure
+
+```
+aicte-workflow/
+├── frontend/                 Next.js app (deployed to Vercel)
+│   ├── app/                  Pages: dashboards, applications, alerts, documents, EVC, audit, admin
+│   ├── components/           Navbar, alert bell, assurance and AI panels, uploads
+│   ├── context/              Language (English / Hindi)
+│   └── lib/                  API client, Supabase client, demo walkthrough steps
+├── backend/                  FastAPI service (deployed to Render)
+│   ├── routers/              REST endpoints under /api/v1
+│   ├── services/             Workflow engine, scheduler, notifier, LLM, assurance, audit, reports
+│   ├── core/                 Settings, auth, simulated clock, rate limiting
+│   ├── adapters/             AICTE system adapter (mock and live stub)
+│   ├── seed/                 Demo data and scripted cases
+│   └── tests/                pytest suite
+├── supabase/migrations/      Schema, row-level security, views, realtime
+├── render.yaml               Render blueprint for the API
+└── docs/SPEC.md              Specification
+```
+
+---
+
+## Local setup
+
+**Prerequisites:** Node.js 20.9+ (required by Next.js 16), Python 3.12, and a Supabase project with the migrations in `supabase/migrations` applied.
+
+### Backend
+
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env          # then fill in Supabase, Groq and Resend values
 
-# Run database seed (if starting fresh)
-python -m seed.seed
+python -m seed.seed           # seed data (first run)
+python seed/demo_cases.py     # reset the scripted demo cases (Case B due in 2 days)
 
-# Start FastAPI backend server
 uvicorn main:app --reload --port 8000
 ```
-Health endpoint: `http://localhost:8000/health`
 
-### Frontend Execution
+API docs at `http://localhost:8000/docs`, health at `http://localhost:8000/health`.
+
+### Frontend
+
 ```bash
 cd frontend
 npm install
+cp .env.example .env.local    # Supabase URL, anon key, NEXT_PUBLIC_API_URL
 npm run dev
 ```
-Portal interface: `http://localhost:3000` (Redirects to `/welcome`)
 
-### Running Backend Regression Tests
+Open `http://localhost:3000`, which redirects to `/welcome`.
+
+### Tests
+
 ```bash
 cd backend
 pytest tests/
 ```
-The tests cover workflow transitions, scheduler alerting and escalation, the audit chain, risk and health scores, Decision Assurance on seeded cases G, H and J, OCR, EVC date suggestions, channel delivery and webhooks, and the security items in §15.11. They run against the Supabase project in `backend/.env` and write test rows to it, so point them at a test project. CI (`.github/workflows/ci.yml`) runs `pip-audit` and `npm audit`.
+
+The tests cover:
+- workflow transitions, and scheduler alerting and escalation;
+- the audit chain, and risk and health scores;
+- Decision Assurance on cases G, H and J;
+- OCR, and EVC date suggestions;
+- channel delivery and webhooks, and the security checks.
+
+They run against the Supabase project in `backend/.env` and write test rows to it, so point them at a test project. Set `RESEND_API_KEY=` when running them, so emails are simulated rather than sent.
 
 ### Optional delivery providers
 
-Set `RESEND_API_KEY` (and `RESEND_WEBHOOK_SECRET`) for email, and `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM`, `TWILIO_WHATSAPP_FROM` for SMS and WhatsApp. Point the providers' webhooks at `<API_PUBLIC_URL>/api/v1/webhooks/resend` and `/webhooks/twilio`. Without them, deliveries are simulated.
+- **Email:** set `RESEND_API_KEY`, plus `RESEND_WEBHOOK_SECRET` for delivery-status callbacks.
+- **SMS and WhatsApp:** set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM` and `TWILIO_WHATSAPP_FROM`.
+- **Webhooks:** point the providers at `<API_PUBLIC_URL>/api/v1/webhooks/resend` and `/webhooks/twilio`.
+- **Demo inbox:** `DEMO_EMAIL_REDIRECT` sends every email to one inbox, with the intended recipient shown in the subject.
 
-## 7. Deployment (Vercel + Render)
+Without these, deliveries are simulated and marked as such.
 
-### Backend on Render
-- In Render, **New → Blueprint** and pick this repo. `render.yaml` defines the `nirikshan-api` web service (root `backend`, Python 3.12, `/health` check) and asks for the secrets.
-- Set these to the deployment's values:
-  - `FRONTEND_ORIGIN` = the Vercel URL (CORS and the links in emails)
-  - `API_PUBLIC_URL` = the Render URL, e.g. `https://nirikshan-api.onrender.com` (signed document links, Twilio callbacks)
-  - `SUPABASE_JWT_SECRET` = the project's real JWT secret (it also signs alert and document links)
-  - `CORS_ORIGIN_REGEX` (optional) to allow Vercel preview deployments
-  - `SCHEDULER_ENABLED=true` to raise alerts every minute; run a single instance, since rate limits and the scheduler are per process
-- The free plan sleeps after 15 idle minutes; the first request after that takes about a minute.
-- `backend/railway.json` holds the same settings for Railway, if you deploy there instead.
+---
+
+## Deployment
+
+### API on Render
+1. In Render, choose **New → Blueprint** and pick this repo. `render.yaml` defines the `nirikshan-api` web service: root `backend`, Python 3.12, and a `/health` check.
+2. Add the secrets under **Environment**:
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` and `SUPABASE_JWT_SECRET`; the JWT secret also signs alert and document links.
+   - `GROQ_API_KEY` and `GROQ_API_KEY_FAILSAFE`.
+   - `RESEND_API_KEY` and `DEMO_EMAIL_REDIRECT`.
+   - `API_PUBLIC_URL`: the Render URL.
+3. Set `FRONTEND_ORIGIN` to the Vercel URL; it's used for CORS and for links in emails.
+4. Optional:
+   - `CORS_ORIGIN_REGEX`, to allow Vercel preview deployments.
+   - `SCHEDULER_ENABLED=true`, for checks every minute. Run a single instance, since rate limits and the scheduler are per process.
+
+`backend/railway.json` holds equivalent settings for Railway.
 
 ### Frontend on Vercel
-- Import the repo with **Root Directory** `frontend` (framework preset Next.js).
-- Variables (needed at build time, so redeploy after changing them): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL` = `<Render URL>/api/v1`.
+1. Import the repo with **Root Directory** `frontend` (framework preset Next.js).
+2. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_API_URL` (`<Render URL>/api/v1`). These are built into the bundle, so redeploy after changing them.

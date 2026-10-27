@@ -5,11 +5,12 @@ import io
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from supabase import create_client
+from postgrest.exceptions import APIError
 
 from core.config import settings
 from core.security import AuthenticatedUser, require_role
 from core import clock
-from services import scheduler
+from services import scheduler, notifier
 from services import audit as audit_service
 from services import approvals
 
@@ -150,12 +151,21 @@ async def reset_clock(user: AuthenticatedUser = Depends(require_role(["admin"]))
     clock.reset()
     reset_time = clock.now()
 
+    # Deliveries still queued from the last jump would add notifications for these alerts
+    notifier.drain(timeout=120)
     future = _supabase.table("alerts").select("id").gt("fired_at", reset_time.isoformat()).execute().data or []
     future_ids = [a["id"] for a in future]
     for start in range(0, len(future_ids), 100):
         chunk = future_ids[start:start + 100]
-        _supabase.table("notifications").delete().in_("alert_id", chunk).execute()
-        _supabase.table("alerts").delete().in_("id", chunk).execute()
+        for attempt in range(3):
+            _supabase.table("notifications").delete().in_("alert_id", chunk).execute()
+            try:
+                _supabase.table("alerts").delete().in_("id", chunk).execute()
+                break
+            except APIError as e:
+                # A delivery that outlived the drain wrote a notification in between; clear it again
+                if e.code != "23503" or attempt == 2:
+                    raise
 
     run_result = scheduler.run_once()
 

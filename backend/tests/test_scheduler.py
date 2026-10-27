@@ -13,7 +13,7 @@ Acceptance Criteria (Section 11 Phase 3):
 """
 import pytest
 from fastapi.testclient import TestClient
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 from main import app
@@ -190,8 +190,13 @@ class TestAlertAndClockEndpoints:
         case_b_id = case_b_setup["id"]
         alert = _supabase.table("alerts").select("*").eq("entity_id", case_b_id).eq("status", "open").limit(1).execute().data
         if not alert:
-            # Create a test alert if none open
-            alert = [_supabase.table("alerts").select("*").eq("entity_id", case_b_id).limit(1).execute().data[0]]
+            alert = _supabase.table("alerts").select("*").eq("entity_id", case_b_id).limit(1).execute().data
+        if not alert:
+            # A clock reset removes alerts fired in the simulated future, so make one
+            alert = _supabase.table("alerts").insert({
+                "entity_type": "application_stage", "entity_id": case_b_id, "kind": "upcoming", "level": 3,
+                "severity": "info", "message": "Test alert", "fired_at": datetime.now(timezone.utc).isoformat(),
+            }).execute().data
 
         alert_id = alert[0]["id"]
         _supabase.table("alerts").update({"status": "open", "acknowledged_by": None, "acknowledged_at": None}).eq("id", alert_id).execute()

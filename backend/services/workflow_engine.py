@@ -110,6 +110,10 @@ def _auto_assign(region_id: Optional[str], owner_role: str, exclude_user: Option
     if region_id:
         prof_q = prof_q.eq("region_id", region_id)
     profiles_res = prof_q.execute()
+    if not profiles_res.data and region_id:
+        # National bodies (the SAC/SHC committee, the bureau) have no region
+        profiles_res = _supabase.table("profiles").select("user_id").eq("role", owner_role) \
+            .is_("region_id", "null").execute()
 
     if not profiles_res.data:
         return None

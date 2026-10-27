@@ -155,18 +155,19 @@ The tests cover workflow transitions, scheduler alerting and escalation, the aud
 
 Set `RESEND_API_KEY` (and `RESEND_WEBHOOK_SECRET`) for email, and `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM`, `TWILIO_WHATSAPP_FROM` for SMS and WhatsApp. Point the providers' webhooks at `<API_PUBLIC_URL>/api/v1/webhooks/resend` and `/webhooks/twilio`. Without them, deliveries are simulated.
 
-## 7. Deployment (Vercel + Railway)
+## 7. Deployment (Vercel + Render)
 
-### Backend on Railway
-- Create a service from this repo with **Root Directory** `backend`. `backend/railway.json` sets the start command and the `/health` check; `backend/.python-version` pins Python 3.12.
-- Variables: everything in `backend/.env.example`, with these set for the deployment:
-  - `FRONTEND_ORIGIN` = the Vercel URL, e.g. `https://nirikshan.vercel.app` (CORS and the links in emails)
-  - `API_PUBLIC_URL` = the Railway URL (signed document links, Twilio callbacks)
+### Backend on Render
+- In Render, **New → Blueprint** and pick this repo. `render.yaml` defines the `nirikshan-api` web service (root `backend`, Python 3.12, `/health` check) and asks for the secrets.
+- Set these to the deployment's values:
+  - `FRONTEND_ORIGIN` = the Vercel URL (CORS and the links in emails)
+  - `API_PUBLIC_URL` = the Render URL, e.g. `https://nirikshan-api.onrender.com` (signed document links, Twilio callbacks)
   - `SUPABASE_JWT_SECRET` = the project's real JWT secret (it also signs alert and document links)
   - `CORS_ORIGIN_REGEX` (optional) to allow Vercel preview deployments
   - `SCHEDULER_ENABLED=true` to raise alerts every minute; run a single instance, since rate limits and the scheduler are per process
-- Do not set `PORT`; Railway provides it.
+- The free plan sleeps after 15 idle minutes; the first request after that takes about a minute.
+- `backend/railway.json` holds the same settings for Railway, if you deploy there instead.
 
 ### Frontend on Vercel
 - Import the repo with **Root Directory** `frontend` (framework preset Next.js).
-- Variables (needed at build time, so redeploy after changing them): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL` = `<Railway URL>/api/v1`.
+- Variables (needed at build time, so redeploy after changing them): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL` = `<Render URL>/api/v1`.

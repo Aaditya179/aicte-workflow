@@ -1,0 +1,38 @@
+# Render blueprint for the backend API (the frontend is on Vercel).
+# Secrets are marked sync: false, so Render asks for them when the blueprint is created.
+services:
+  - type: web
+    name: nirikshan-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: FRONTEND_ORIGIN
+        value: https://nirikshan-six.vercel.app
+      - key: API_PUBLIC_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_API_KEY_FAILSAFE
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: DEMO_EMAIL_REDIRECT
+        sync: false
+      - key: SCHEDULER_ENABLED
+        value: "false"
+      - key: DEMO_MFA_BYPASS
+        value: "true"

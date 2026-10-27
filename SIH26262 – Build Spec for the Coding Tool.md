@@ -1,6 +1,8 @@
-# SIH26262 – Build Spec for the Coding Tool
+# SIH26262 – Build Spec for the Coding Tool (v2)
 
 Oct 26, 2026 · @Aaditya
+
+**Version 2, updated 26 October 2026.** Section 15 adds Decision Assurance, OCR expiry suggestion, the EVC scheduling assistant, multi-channel escalation with delivery tracking, the institution compliance calendar, and the security and privacy items from the solution package. Where section 15 conflicts with an earlier section, section 15 wins. Phases 0 to 7 of section 11 are already built, so apply section 15 on top of the existing code as retrofits and new work, starting with the migration. Do not rebuild anything from phases 0 to 7.
 
 This is the single source of truth for building the SIH26262 prototype: paste one section at a time into your coding tool, tell it to follow the spec exactly, and ask it to check with you before deviating.
 
@@ -287,8 +289,8 @@ Save as `0003_views.sql`: create the views `v_pendency_by_stage_region` (counts 
 - Enable RLS on every table.
 - `institution`: can read and write only rows whose `institution_id` equals their profile's `institution_id`.
 - `scrutiny_officer`, `regional_officer`, `evc_member`: read rows in their region (EVC members only their assigned visits).
-- `bureau_officer` and `admin`: read everything.
-- `audit_log`: read-only for bureau officers and admins; no update or delete for anyone.
+- `bureau_officer`: read cases assigned to their bureau, across regions as configured. `admin`: no access to case data, configuration and users only. `auditor`: read-only access to the audit log and reports. `sac_shc_member`: only the cases assigned to them.
+- `audit_log`: read-only for auditors, bureau officers and admins; no update or delete for anyone.
 - `notifications`: a user reads and updates only their own.
 - All writes go through FastAPI with the service-role key, which checks roles in code as well.
 - Add a JWT hook or login step that copies `role`, `region_id` and `institution_id` into the token claims.
@@ -398,7 +400,7 @@ class WorkflowEngine:
 
 Behaviour that must hold:
 
-- `advance` requires the actor's role to match the stage's `owner_role`, or the actor to be an admin.
+- `advance` requires the actor's role to match the stage's `owner_role`.
 - On advance: close the open `stage_history` row, open a new one, set `stage_entered_at` from `clock.now()`, compute `due_at`, assign the next owner (same region, fewest open cases), write an audit entry, and create an in-app notification for the new owner.
 - If the next stage has `creates: evc_visit`, insert an `evc_visits` row with `scheduling_due_at` from the matching SLA rule.
 - `return_for_deficiency` and `revert` reject an empty reason, set status to `returned` where relevant, and always notify the institution.
@@ -476,7 +478,7 @@ All routes live under `/api/v1`, need a valid JWT (except `/demo/accounts`), and
 | `GET /applications` | any, scoped | List with filters (region, stage, status, officer, search) |
 | `GET /applications/{id}` | scoped | Detail with stage definition |
 | `GET /applications/{id}/timeline` | scoped | Stage history and related audit entries |
-| `POST /applications/{id}/advance` | stage owner, admin | Move to the next stage |
+| `POST /applications/{id}/advance` | stage owner | Move to the next stage |
 | `POST /applications/{id}/return` | officers | Send back for deficiency, reason required |
 | `POST /applications/{id}/revert` | regional, bureau | Revert to an earlier stage, reason required |
 | `POST /applications/{id}/reassign` | regional, bureau | Change the assigned officer |
@@ -714,3 +716,384 @@ Done when a first-time visitor can complete the 2-minute checklist without help.
 - Role access is verified for every role.
 - A first-time visitor can follow the welcome page and complete the 2-minute checklist.
 - README, deployed links, demo video and presentation are ready, with the SLA placeholders stated as configurable defaults.
+
+## 15. Update v2: additions from the solution package
+
+These additions override earlier sections where they conflict. Phases 0 to 7 are already built; apply these on top of the existing code.
+
+### 15.0 Overrides
+
+- The admin role cannot advance, return, revert or reassign cases and cannot read case data. Admins edit rules and timelines (with a second admin approving each change), manage users, and run the demo simulator.
+- The roles are now: `institution`, `scrutiny_officer`, `regional_officer`, `evc_member`, `sac_shc_member`, `bureau_officer`, `auditor`, `admin`. The auditor has read-only access to the audit log and reports.
+- Notifications never contain sensitive details. Emails and SMS carry only a reference number, the alert type and a signed link.
+- Wording in the UI, README and presentation: designed to align with India's Digital Personal Data Protection Act, 2023. Never write compliant.
+- Differentiator priority, in order: admin-editable rules engine, tamper-evident audit trail, predictive pendency, Decision Assurance. The first three are already built; Decision Assurance is the one left.
+
+### 15.1 Migration `0004_v2.sql`
+
+Run the two `alter type` statements first and commit them before anything that uses the new values.
+
+```sql
+alter type user_role add value if not exists 'auditor';
+alter type user_role add value if not exists 'sac_shc_member';
+
+alter table profiles add column if not exists bureau text;
+alter table profiles add column if not exists base_city text;
+alter table applications add column if not exists bureau text;
+
+alter table documents add column if not exists sha256 text;
+alter table documents add column if not exists version int default 1;
+alter table documents add column if not exists metadata jsonb default '{}';  -- extracted fields: institution_name, land_area, ...
+alter table documents add column if not exists ocr_suggested_expiry date;
+alter table documents add column if not exists ocr_confidence numeric;
+alter table documents add column if not exists ocr_status text default 'none';  -- none | suggested | accepted | edited | rejected
+
+alter table notifications add column if not exists delivery_status text default 'queued';  -- queued | sent | delivered | failed | read
+alter table notifications add column if not exists delivered_at timestamptz;
+alter table notifications add column if not exists provider_ref text;
+
+alter table evc_visits add column if not exists location text;
+
+create table document_access_log (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid not null references documents(id),
+  user_id uuid references profiles(user_id),
+  action text not null,  -- upload | view | download | verify
+  ip text,
+  created_at timestamptz default now()
+);
+
+create table message_templates (
+  id uuid primary key default gen_random_uuid(),
+  code text not null,  -- acknowledgement | deficiency_letter | deadline_reminder | escalation_notice | renewal_request | undertaking_notice
+  channel text not null default 'email',
+  locale text not null default 'en',
+  subject text,
+  body text not null,  -- placeholders like {{reference_no}}, {{due_date}}, {{link}}
+  unique (code, channel, locale)
+);
+
+create table communications (
+  id uuid primary key default gen_random_uuid(),
+  application_id uuid references applications(id),
+  template_code text,
+  channel text,
+  subject text,
+  body text,
+  sent_by uuid references profiles(user_id),
+  sent_at timestamptz default now()
+);
+
+create table evc_availability (
+  id uuid primary key default gen_random_uuid(),
+  member_id uuid not null references profiles(user_id),
+  day date not null,
+  available boolean default true,
+  unique (member_id, day)
+);
+
+create table mandatory_evidence (
+  id uuid primary key default gen_random_uuid(),
+  template_code text not null,
+  stage_key text not null,
+  doc_type text not null,
+  label text not null
+);
+
+create table decisions (
+  id uuid primary key default gen_random_uuid(),
+  application_id uuid not null references applications(id),
+  stage_key text not null,
+  outcome text,  -- approve | approve_with_conditions | reject | return
+  status text default 'draft',  -- draft | committed
+  decided_by uuid references profiles(user_id),
+  decided_at timestamptz,
+  remarks text,
+  created_at timestamptz default now()
+);
+
+create table decision_evidence (
+  id uuid primary key default gen_random_uuid(),
+  decision_id uuid not null references decisions(id) on delete cascade,
+  document_id uuid not null references documents(id),
+  doc_version int,
+  doc_sha256 text,
+  valid_until date,
+  linked_at timestamptz not null
+);
+
+create table assurance_reports (
+  id uuid primary key default gen_random_uuid(),
+  decision_id uuid not null references decisions(id) on delete cascade,
+  kind text not null,  -- pre | post
+  generated_at timestamptz not null,
+  checks jsonb not null,  -- [{check, result, detail}]
+  passed int default 0,
+  flagged int default 0
+);
+
+create table assurance_flags (
+  id uuid primary key default gen_random_uuid(),
+  report_id uuid not null references assurance_reports(id) on delete cascade,
+  decision_id uuid not null references decisions(id) on delete cascade,
+  check_type text not null,
+  severity severity_t not null,
+  message text not null,
+  entity_type text,
+  entity_id uuid,
+  status text default 'open',  -- open | acknowledged | overridden
+  responded_by uuid references profiles(user_id),
+  responded_at timestamptz,
+  reason text
+);
+
+create table approval_requests (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,  -- rule_change | revert | assurance_override
+  entity_type text,
+  entity_id uuid,
+  payload jsonb,
+  requested_by uuid not null references profiles(user_id),
+  status text default 'pending',  -- pending | approved | rejected
+  approved_by uuid references profiles(user_id),
+  decided_at timestamptz,
+  reason text,
+  created_at timestamptz default now()
+);
+```
+
+Also extend RLS: `document_access_log` readable by auditors, bureau officers and the document's own institution; `decisions`, `decision_evidence`, `assurance_reports` and `assurance_flags` follow the application's region scope; `approval_requests` readable by admins and the requester.
+
+### 15.2 Decision Assurance and evidence integrity
+
+A rule-based layer checks the evidence behind every decision before and after it is taken and flags doubtful items for the officer. It checks freshness, completeness, consistency, integrity and provenance. It never approves or rejects anything and never blocks an officer from recording a decision; it requires that every flag gets a recorded response.
+
+Scope: keep this lightweight and rule-based. Full document forgery detection belongs to a different problem statement (SIH26261) and is out of scope.
+
+**Checks (`services/assurance.py`)**
+
+| Check | Rule | Example flag |
+| --- | --- | --- |
+| Evidence linking | Snapshot each cited document's version, SHA-256 and `valid_until` into `decision_evidence` when the decision is drafted | Decision cites a document that was later replaced by a newer version |
+| Freshness | `valid_until` of each cited document must be on or after the decision date, plus any validity window set in `sla_rules` | Lease expired before the decision date |
+| Completeness | Every row of `mandatory_evidence` for the template and stage must have a verified document | Mandatory document missing for the stage |
+| Consistency | Compare `documents.metadata` fields (institution name, land area) against the institution and application records and across documents | Institution name or land area differs between documents |
+| Source verification | Ask the AICTE adapter to confirm the item; if the adapter cannot, mark it unverified | Data could not be confirmed with the source |
+| Tamper detection | Recompute the stored file's SHA-256 and compare with `documents.sha256` and the snapshot | Document edited after the decision |
+| Post-decision recheck | Daily scheduler job reruns freshness and tamper checks for decisions committed in the last 12 months | Evidence relied on has since expired |
+| Anomaly flags | Decision committed in under 10 percent of the stage SLA; or 3 or more overrides by one officer in 30 days | Approval completed unusually fast |
+
+**Flow**
+
+1. The officer starts a decision on an application (`POST /applications/{id}/decisions`). The system snapshots the evidence and runs the pre-decision checks.
+2. The assurance report appears on the application page, for example 3 checks passed, 1 stale document, 1 unverified source. Each failed check becomes a row in `assurance_flags`.
+3. For each flag the officer chooses Acknowledge or Override and types a reason for an override. Both responses are written to the audit log.
+4. The decision can be committed only when no flag is open. Committing is always the officer's own action.
+5. The daily recheck creates a post report. New flags raise an alert to the decision's officer and the regional officer.
+
+Maker-checker: build it for rule changes (a second admin approves each change to templates, SLA rules and escalation chains through `approval_requests`). Overrides and reverts are recorded in the audit trail; add a setting `maker_checker_for_overrides`, off by default, that routes them through `approval_requests` as well.
+
+**API additions**
+
+| Method and path | Roles | Purpose |
+| --- | --- | --- |
+| `POST /applications/{id}/decisions` | stage owner, bureau, sac\_shc\_member | Draft a decision, snapshot evidence, run checks |
+| `GET /decisions/{id}/assurance` | scoped | Latest assurance report with flags |
+| `POST /assurance/flags/{id}/acknowledge` | decision officer | Acknowledge a flag |
+| `POST /assurance/flags/{id}/override` | decision officer | Override with a mandatory reason |
+| `POST /decisions/{id}/commit` | decision officer | Fails while any flag is open |
+| `GET /assurance/rechecks` | bureau, auditor | Post-decision recheck results |
+| `GET and POST /admin/approvals` | admin (second admin approves) | Maker-checker queue |
+
+**UI:** an Assurance panel on the application detail page at decision stages, a flag badge on application lists, a dashboard card for decisions with open or post-decision flags, and the label Advisory, the decision rests with the competent authority.
+
+### 15.3 OCR expiry suggestion
+
+When a lease or other validity document is uploaded, the backend sends the file to a vision-capable LLM and asks for JSON only: `expiry_date`, `confidence` (0 to 1) and `evidence_text` (the line where the date was found). Store the result in `documents.ocr_suggested_expiry`, `ocr_confidence` and `ocr_status = suggested`.
+
+- The UI shows the suggestion next to the expiry field with Accept and Edit buttons and the evidence text.
+- `valid_until` is set only when an officer or the uploader confirms. The suggestion is never trusted on its own.
+- Record the response (accepted, edited or rejected) in the audit log.
+- If the model returns no date or low confidence, show Could not read the date, enter it manually.
+
+### 15.4 EVC scheduling assistant
+
+`GET /evc/{id}/suggest-dates` returns the top 3 candidate dates before the visit's `scheduling_due_at`:
+
+1. Candidates are the next 30 days, excluding weekends.
+2. Keep a date only if every proposed committee member has `evc_availability.available = true` for it and has no other visit that day.
+3. Score each date: plus 2 per member whose `base_city` matches the institution's city, plus 1 for dates earlier in the window, minus 1 per member already carrying more than 3 visits that month.
+4. Return the date, members, a one-line reason for each, and a travel note based on city match. Store the chosen place in `evc_visits.location`.
+
+The regional officer picks one; the system only suggests. Add an availability editor for EVC members on `/evc`.
+
+### 15.5 Multi-channel escalation and delivery tracking
+
+Each escalation level now names its channels. Region-specific rows in `escalation_chains` override the national default.
+
+```yaml
+- level: 1
+  after_days_overdue: 0
+  notify_role: assigned_officer
+  channels: [in_app, email]
+- level: 2
+  after_days_overdue: 3
+  notify_role: regional_officer
+  channels: [in_app, email, sms]
+- level: 3
+  after_days_overdue: 7
+  notify_role: bureau_officer
+  channels: [in_app, email, sms, whatsapp]
+```
+
+- The notifier writes one `notifications` row per recipient per channel, using the matching `message_templates` row and the recipient's `locale`.
+- Email goes through Resend, SMS and WhatsApp through the Twilio sandbox. If a provider is not configured, log the message and mark it simulated so the demo still works.
+- Delivery status moves queued, sent, delivered, failed. Provider webhooks (`POST /webhooks/resend`, `POST /webhooks/twilio`) update `delivery_status`, `delivered_at` and `provider_ref`. Opening the in-app notification or the email link sets read and `read_at`.
+- The alert detail view shows a delivery timeline per recipient and channel. A failed delivery on a critical alert falls back to the next channel in the chain.
+- Acknowledgement-based re-escalation from section 5.4 stays as is.
+
+### 15.6 Institution compliance calendar
+
+Add `/compliance-calendar` for institutions: a month view and an agenda list of undertaking due dates, document expiries and pending responses, colour-coded by status. Data comes from `GET /institution/calendar`, which merges `undertakings`, `documents` and open returned applications. Each item has a one-click Renew or Submit button that opens the upload form prefilled with the item (renewals set `supersedes_document_id`). The institution dashboard shows the next three items.
+
+### 15.7 Standardised communications
+
+- Seed `message_templates` in English and Hindi for: acknowledgement, deficiency letter, deadline reminder, escalation notice, renewal request and undertaking notice.
+- Officers pick a template on the application page, see the placeholders filled, can edit the text, and send. Every send is saved in `communications` and audited.
+- The LLM may polish the wording of a draft on request; it never sends anything itself.
+
+### 15.8 Security and privacy additions
+
+**Identity and access**
+
+- Institutions log in with an email OTP (Supabase email OTP). Officers, EVC and SAC/SHC members and bureau officers need MFA (Supabase TOTP). The backend rejects officer routes unless the token's authentication level shows MFA was completed.
+- For the demo, one officer account goes through the full MFA flow on screen; the others use a documented bypass flag `DEMO_MFA_BYPASS`, off in any real deployment.
+- Short sessions: access tokens expire in 1 hour with silent refresh.
+- Every query is scoped by role and region in RLS and again in FastAPI, as in section 3.
+
+**Roles at a glance**
+
+| Role | Can see | Can do |
+| --- | --- | --- |
+| Institution | Own applications, undertakings, documents | Upload evidence, respond to queries, submit renewals |
+| Regional officer | Cases in their region | Process stages, verify evidence, return or revert with a reason, acknowledge or override assurance flags |
+| Bureau officer | Cases assigned to their bureau, across regions as configured | Process and monitor cases, review escalations |
+| EVC and SAC/SHC member | Only cases assigned to them | Record findings and recommendations |
+| Administrator | Rules, timelines, user management | Edit configuration with a second admin approving each change; no access to case decisions |
+| Auditor | Audit trail and reports | Read-only |
+
+**Document protection**
+
+- Private storage buckets; the platform provides encryption at rest and TLS in transit.
+- On upload the backend computes SHA-256 and stores it in `documents.sha256`; allow only PDF, PNG and JPG up to 10 MB; reject anything else. Leave a clearly marked hook for malware scanning (production design).
+- Serve files only through signed links that expire in 5 minutes.
+- Write a `document_access_log` row for every upload, view, download and verify.
+- Anomaly alert: a user with 10 or more downloads in 5 minutes raises a warning alert to the bureau officer.
+
+**Application and API**
+
+- Pydantic validation on every input; parameterised queries only; escape rendered user text.
+- Rate limiting on login, OTP and AI endpoints (for example slowapi); lockout after repeated failed logins.
+- Secrets only in environment variables; run dependency scanning (`pip-audit`, `npm audit`) in CI.
+
+**Privacy**
+
+- Collect only what the workflow needs. Mask phone numbers and emails in officer list views (show the last 4 digits, or the first letter and domain) and reveal them on the detail page.
+- Exports are restricted to officers and auditors, and every export is logged.
+- Notifications follow the safety rule in 15.0.
+
+**Production design only (state on one slide, do not build)**
+
+SSO with AICTE systems, maker-checker on every sensitive action, malware scanning, alerts on unusual login locations, backups with tested restore, disaster recovery, centralised logging and monitoring, vulnerability assessment and penetration testing, government-approved hosting (the final choice is AICTE's), and retention rules agreed with AICTE.
+
+**Security demo steps for the video**
+
+1. Log in as different roles and show each sees only its own region or institution.
+2. Sign in with OTP or MFA.
+3. Upload a document, then show the hash, the private storage and the access log entry.
+4. Open the audit trail, including a recorded override of an assurance flag.
+5. Cover everything else on one slide as the production security design.
+
+### 15.9 Seed data additions
+
+- New demo accounts: `auditor@demo.sih` (auditor) and `sacshc@demo.sih` (sac\_shc\_member, assigned a few cases). The officer accounts that demonstrate MFA are marked in the welcome cards.
+- Seed `mandatory_evidence` for every template and stage, for example evc\_visit requires an `evc_report`, and final\_decision requires a verified `lease` and `application_form`.
+- Seed `message_templates` (English and Hindi) and `evc_availability` for three EVC members over the next 30 days, with different base cities.
+- Add a sample lease image in `seed/data/` with a clearly printed expiry date for the OCR demo.
+
+| Case | Setup | Demo use |
+| --- | --- | --- |
+| G | Application at final\_decision. Its lease expired 5 days ago, the mandatory EVC report is missing, the lease metadata shows a different institution name, and the mock adapter returns unverified for this institution | Assurance report with freshness, completeness, consistency and source flags; acknowledge one, override one with a reason, then commit |
+| H | Decision committed 20 days ago citing a lease that is valid for 10 more days | Time-jump 15 days: the post-decision recheck raises a flag and an alert |
+| I | Fresh lease upload using the sample image | OCR suggests the expiry date; the officer accepts it |
+| J | An officer with 3 overrides in the last 30 days | Anomaly flag on the next decision |
+
+### 15.10 Updated build phases
+
+Phases 0 to 7 are done. The rows for phases 1, 3 and 4 are retrofits to the existing code; Phase 7B is new work; Phase 8 stays last.
+
+| Phase | Addition |
+| --- | --- |
+| 1 Foundation | Migration `0004_v2.sql`; new roles; OTP and MFA login; document upload with SHA-256, file validation, signed links and the access log |
+| 3 Alerts | Channels per escalation level; per-region chains; delivery tracking and webhooks; message templates and the communications log |
+| 4 Monitoring | Compliance calendar; EVC scheduling assistant; OCR expiry suggestion |
+| 7B New differentiators | The rules builder, audit verify, risk score and the rest were built in phase 7. Remaining: add maker-checker to the existing rules builder, then Decision Assurance (prompt below) |
+| 8 Polish | Security demo steps from 15.8; masking in list views; rate limits |
+
+**Prompt for Decision Assurance**
+
+Implement section 15.2: the decision, decision\_evidence, assurance\_reports and assurance\_flags tables, the eight checks in `services/assurance.py`, the endpoints, the daily post-decision recheck job in the scheduler, the Assurance panel on the application page, and seeded cases G, H and J. A decision cannot be committed while any flag is open. Add tests for each check, the commit block, and the recheck.
+
+Done when case G shows four flags, acknowledging and overriding them is audited, commit then succeeds, and a +15 day jump on case H raises the post-decision flag.
+
+**Prompt for the security items**
+
+Implement the Identity, Document protection, Application and Privacy items in 15.8, the `document_access_log`, and the auditor role. Add tests that an institution cannot read another institution's documents and that an unsigned or expired link is rejected.
+
+Done when the five security demo steps work end to end.
+
+### 15.11 Testing additions
+
+- Assurance: each check fires on its seeded case; commit is blocked with an open flag; an override without a reason is rejected; the post recheck creates a report and an alert; case J raises the anomaly flag.
+- OCR: the sample lease returns a date and confidence; the suggestion never sets `valid_until` until confirmed.
+- EVC assistant: suggestions skip unavailable members, weekends and double-booked days.
+- Channels: a level 3 escalation creates rows for every configured channel; a failed critical delivery falls back to the next channel; webhooks update delivery status.
+- Security: officer routes reject tokens without MFA; the admin cannot read a case or advance one; uploads reject disallowed types and files over 10 MB; every document view and download is logged; maker-checker blocks a single admin from applying their own rule change.
+
+### 15.12 Definition of done additions
+
+- Decision Assurance works on cases G, H and J, and the UI always labels it advisory.
+- OCR, EVC suggestions, the compliance calendar, delivery tracking and message templates work on seeded data.
+- The admin has no path to case data or case actions.
+- The five security demo steps can be recorded in one take.
+- README and presentation use the designed to align with wording and list production-only security items separately from what the prototype shows.
+
+### 15.13 Landing page for judges (replaces 8.1)
+
+The live link goes to judges, so the first page they see must explain the product and tell them what to do. Build it at `/welcome` and make `/` redirect there. It must work on mobile, respect reduced motion, and have visible keyboard focus.
+
+**Page structure, top to bottom**
+
+1. **Header:** product name ApprovalTrack on the left; anchor links to Start here, Features and Escalation on the right.
+2. **Hero:** a one-line promise, one supporting sentence, a primary button Enter as Regional officer, a secondary button See the 2-minute path, and a small note that the data is dummy and the AICTE connection is mocked behind an adapter. Beside the text, show one example case as a vertical stage tracker (Scrutiny done, EVC queue done, EVC visit 3 days overdue, Final decision upcoming) with an escalation card underneath saying it was escalated to the Regional officer and that email and SMS were delivered. This card is the one memorable element of the page.
+3. **Start here, left column:** a list of demo roles (Institution, Regional officer, Bureau officer, Admin), each with a one-line description of what that role can do and an Enter as button. Each button goes to `/login?demo=<role>`, and the login page signs in with the matching demo account.
+4. **Start here, right column, Try it in 2 minutes:** six numbered steps, each naming the role to use: submit an application as the institution; advance it as the regional officer; open the simulator as admin and move the clock forward 7 days; check Alerts as the regional officer for the overdue notice and escalation; open Documents as the institution for the lease expiry alert and upload a renewal; open the audit trail as the bureau officer and press Verify Integrity.
+5. **Features:** three columns with ruled lists, not identical cards: Run the approval, Watch every deadline, Keep decisions trustworthy. Cover routing and return or revert, dashboards, EVC queue and suggested dates, undertakings, lease and document expiry with OCR date suggestion, multi-level escalation across email, SMS, WhatsApp and in-app with delivery tracking, delay-risk flags and health score, Decision Assurance, the admin rules engine, the tamper-evident audit trail, access control with OTP and MFA, and English and Hindi.
+6. **Escalation:** a dark band showing the chain as three steps: day 0 to the assigned officer, day 3 to the regional officer, day 7 to the bureau officers, each with its channels. One sentence says timelines and chains are settings an admin edits, with a second admin approving.
+7. **Footer:** automation supports officers and never replaces decisions of the competent authority; all AI output is advisory; designed to align with the Digital Personal Data Protection Act, 2023.
+
+**Design direction**
+
+- Institutional but not generic: ink navy text on a cool off-white page, deep teal as the main action colour, amber for warnings and red for overdue, so colour carries meaning. Avoid a cream and terracotta look and avoid gradient backgrounds.
+- Type: Bricolage Grotesque for headings and IBM Plex Sans for body text, loaded with `next/font`.
+- Left-aligned text, lines under 80 characters, sentence case, no all-caps labels, buttons that say exactly what they do and no arrows.
+- Numbers only where there is a real sequence (the 2-minute steps). Use rules and dividers for structure, not decoration.
+- Motion: one entrance only, the escalation card in the hero fading in once; wrap it in `prefers-reduced-motion: no-preference`. No other scroll or hover animation.
+
+**Content rules**
+
+- Only list features that are actually built. Remove any bullet for something missing, because judges will try what the page promises.
+- Keep copy in plain words from the user's point of view, for example Moves to the next stage when the last one is done.
+- The hero example and the 2-minute steps must match the seeded demo cases in sections 9 and 15.9, so what the page says is exactly what judges see.
+
+**Done when** a first-time visitor can pick a role and finish the six steps without asking anyone, the page reads well at 375 px wide, and every button on it leads somewhere that works.

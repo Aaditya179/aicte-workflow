@@ -6,15 +6,19 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AlertBell from './AlertBell';
 import SimulatedDateBanner from './SimulatedDateBanner';
-import { ShieldCheck, LogOut, User, FastForward } from 'lucide-react';
+import { ShieldCheck, LogOut, User, FastForward, Globe } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { lang, toggleLang, t } = useLanguage();
+  const [mounted, setMounted] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setUserEmail(user.email || null);
@@ -44,9 +48,11 @@ export default function Navbar() {
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white">AICTE</span>
+                  <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white">
+                    {mounted ? t('AICTE') : 'AICTE'}
+                  </span>
                   <span className="text-xs ml-1.5 px-1.5 py-0.5 rounded font-semibold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    SLA Monitor
+                    {mounted ? t('SLA Monitor') : 'SLA Monitor'}
                   </span>
                 </div>
               </Link>
@@ -61,7 +67,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Dashboard
+                  {mounted ? t('Dashboard') : 'Dashboard'}
                 </Link>
                 <Link
                   href="/applications"
@@ -71,7 +77,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Applications
+                  {mounted ? t('Applications') : 'Applications'}
                 </Link>
                 <Link
                   href="/evc"
@@ -81,7 +87,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  EVC Visits
+                  {mounted ? t('EVC Visits') : 'EVC Visits'}
                 </Link>
                 <Link
                   href="/undertakings"
@@ -91,7 +97,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Undertakings
+                  {mounted ? t('Undertakings') : 'Undertakings'}
                 </Link>
                 <Link
                   href="/documents"
@@ -101,7 +107,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Documents
+                  {mounted ? t('Documents') : 'Documents'}
                 </Link>
                 <Link
                   href="/alerts"
@@ -111,7 +117,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Alerts
+                  {mounted ? t('Alerts') : 'Alerts'}
                 </Link>
                 <Link
                   href="/reports"
@@ -121,26 +127,58 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Reports
+                  {mounted ? t('Reports') : 'Reports'}
                 </Link>
                 {(userRole === 'admin' || userRole === 'bureau_officer') && (
-                  <Link
-                    href="/admin/simulator"
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 ${
-                      pathname?.startsWith('/admin/simulator')
-                        ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <FastForward className="w-3.5 h-3.5 text-amber-500" />
-                    Time Simulator
-                  </Link>
+                  <>
+                    <Link
+                      href="/audit"
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        pathname?.startsWith('/audit')
+                          ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {mounted ? t('Audit') : 'Audit'}
+                    </Link>
+                    <Link
+                      href="/admin/rules"
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        pathname?.startsWith('/admin/rules')
+                          ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {mounted ? t('Rules') : 'Rules'}
+                    </Link>
+                    <Link
+                      href="/admin/simulator"
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition inline-flex items-center gap-1.5 ${
+                        pathname?.startsWith('/admin/simulator')
+                          ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <FastForward className="w-3.5 h-3.5 text-amber-500" />
+                      {mounted ? t('Time Simulator') : 'Time Simulator'}
+                    </Link>
+                  </>
                 )}
               </nav>
             </div>
 
             {/* Right: Actions */}
             <div className="flex items-center gap-3">
+              {/* Hindi Language Toggle (§10) */}
+              <button
+                type="button"
+                onClick={toggleLang}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-1.5 shadow-sm"
+                title="Toggle Language / भाषा बदलें"
+              >
+                <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>{lang === 'hi' ? 'हिन्दी (Active)' : 'English'}</span>
+              </button>
               <AlertBell />
 
               {userEmail && (

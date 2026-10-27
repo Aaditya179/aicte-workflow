@@ -411,6 +411,20 @@ def run_once() -> Dict[str, Any]:
         # ---------------------------------------------------------
         resolve_cleared_alerts(sim_now)
 
+        # ---------------------------------------------------------
+        # 6. RE-ESCALATE UNACKNOWLEDGED CRITICAL ALERTS (§5.4, §10)
+        # ---------------------------------------------------------
+        reescalate_unacknowledged(sim_now)
+
+        # ---------------------------------------------------------
+        # 7. RECOMPUTE COMPLIANCE HEALTH SCORES (§10.2)
+        # ---------------------------------------------------------
+        try:
+            from services import health_score
+            health_score.recompute_all_health_scores(sim_now)
+        except Exception as he:
+            logger.warning(f"Health score recompute warning: {he}")
+
     except Exception as e:
         logger.exception(f"Scheduler execution error: {e}")
         errors.append(str(e))
@@ -471,6 +485,63 @@ def resolve_cleared_alerts(sim_now: datetime) -> None:
 
     except Exception as e:
         logger.error(f"Error in resolve_cleared_alerts: {e}")
+
+
+def reescalate_unacknowledged(sim_now: datetime) -> int:
+    """
+    Re-escalate critical alerts that remain unacknowledged beyond ack_timeout_hours (§5.4, §10).
+    Default timeout: 48 hours. Fires higher level notification to higher authorities.
+    """
+    now_iso = sim_now.isoformat()
+    reescalated_count = 0
+    try:
+        # Fetch escalation chain default ack timeout
+        chain_res = _supabase.table("escalation_chains").select("ack_timeout_hours").limit(1).execute()
+        ack_timeout_hours = 48
+        if chain_res.data and chain_res.data[0].get("ack_timeout_hours"):
+            ack_timeout_hours = chain_res.data[0]["ack_timeout_hours"]
+
+        timeout_cutoff = (sim_now - timedelta(hours=ack_timeout_hours)).isoformat()
+
+        # Find open, unacknowledged critical alerts fired before cutoff that haven't been re-escalated
+        stale_alerts = _supabase.table("alerts").select("*") \
+            .eq("severity", "critical") \
+            .eq("status", "open") \
+            .is_("acknowledged_at", "null") \
+            .lt("fired_at", timeout_cutoff).execute()
+
+        for alert in (stale_alerts.data or []):
+            curr_level = alert.get("level", 1)
+            next_level = curr_level + 1
+            # Check if higher escalation alert already exists
+            existing = _supabase.table("alerts").select("id") \
+                .eq("entity_type", alert["entity_type"]) \
+                .eq("entity_id", alert["entity_id"]) \
+                .eq("kind", "re_escalation") \
+                .eq("level", next_level).execute()
+
+            if not existing.data:
+                # Fire re-escalation alert
+                new_alert = {
+                    "entity_type": alert["entity_type"],
+                    "entity_id": alert["entity_id"],
+                    "kind": "re_escalation",
+                    "level": next_level,
+                    "severity": "critical",
+                    "title": f"URGENT RE-ESCALATION (L{next_level}): Unacknowledged breach on {alert['entity_type']} {alert['entity_id']}",
+                    "message": f"Previous Level {curr_level} alert was NOT acknowledged within {ack_timeout_hours} hours. Immediate senior intervention required.",
+                    "status": "open",
+                    "region_id": alert.get("region_id"),
+                    "fired_at": now_iso
+                }
+                res = _supabase.table("alerts").insert(new_alert).execute()
+                if res.data:
+                    reescalated_count += 1
+                    logger.warning(f"Re-escalated unacknowledged alert {alert['id']} to level {next_level}")
+    except Exception as e:
+        logger.error(f"Error in reescalate_unacknowledged: {e}")
+
+    return reescalated_count
 
 
 # -------------------------------------------------------------

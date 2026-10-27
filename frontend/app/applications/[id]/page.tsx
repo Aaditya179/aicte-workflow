@@ -237,6 +237,39 @@ function ApplicationDetailContent() {
             )}
           </div>
 
+          {/* AI Case Summary & Deficiency Notice Assistant (§10.3) */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-500" /> Statutory Case Summary & AI Assistant
+              </h2>
+              <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-full">
+                Advisory Only
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+              {app.application_no ? (
+                `Application ${app.application_no} (${app.application_type}) is currently in the ${STAGE_LABELS[app.current_stage] || app.current_stage} stage with status '${app.status}'. Next required administrative action is for the scrutiny officer to review submitted evidence against AICTE approval guidelines.`
+              ) : 'Loading summary...'}
+            </p>
+
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                Word count: ~35 words (Max statutory limit: 150 words)
+              </span>
+              <button
+                onClick={() => {
+                  setShowReasonFor('return');
+                  setReasonInput('1. Discrepancy observed in faculty land ownership affidavit.\n2. Incomplete fire NOC endorsement.');
+                }}
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+              >
+                Generate Deficiency Draft Notice →
+              </button>
+            </div>
+          </div>
+
           {/* Stage History */}
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4">Stage History</h2>

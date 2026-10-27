@@ -141,6 +141,68 @@ async def get_regional_dashboard(
                 c["is_overdue"] = False
 
     base_data["urgent_case_queue"] = urgent_queue
+
+    # Workload Balancer (§10.5):
+    # Analyze open cases per officer, find most loaded and least loaded, suggest moving oldest unstarted cases
+    try:
+        officers_prof = _supabase.table("profiles").select("user_id, full_name, email, role") \
+            .eq("region_id", region_id) \
+            .in_("role", ["regional_officer", "scrutiny_officer"]).execute()
+        
+        officer_stats = []
+        for off in (officers_prof.data or []):
+            u_id = off["user_id"]
+            open_c = _supabase.table("applications").select("id, due_at, stage_entered_at, application_number") \
+                .eq("current_owner_id", u_id) \
+                .eq("status", "in_progress") \
+                .order("stage_entered_at", desc=False).execute()
+            
+            c_data = open_c.data or []
+            overdue_c = 0
+            for c in c_data:
+                if c.get("due_at"):
+                    try:
+                        if datetime.fromisoformat(c["due_at"].replace("Z", "+00:00")) < sim_now:
+                            overdue_c += 1
+                    except Exception:
+                        pass
+            
+            officer_stats.append({
+                "user_id": u_id,
+                "name": off.get("full_name") or off.get("email", "Officer").split("@")[0],
+                "role": off.get("role"),
+                "open_count": len(c_data),
+                "overdue_count": overdue_c,
+                "oldest_case": c_data[0] if c_data else None
+            })
+
+        # Generate balancing suggestion if >= 2 officers
+        workload_suggestion = None
+        if len(officer_stats) >= 2:
+            officer_stats.sort(key=lambda o: o["open_count"], reverse=True)
+            most_loaded = officer_stats[0]
+            least_loaded = officer_stats[-1]
+            diff = most_loaded["open_count"] - least_loaded["open_count"]
+            if diff >= 2 and most_loaded["oldest_case"]:
+                workload_suggestion = {
+                    "from_officer": most_loaded["name"],
+                    "from_officer_id": most_loaded["user_id"],
+                    "to_officer": least_loaded["name"],
+                    "to_officer_id": least_loaded["user_id"],
+                    "case_id": most_loaded["oldest_case"]["id"],
+                    "case_number": most_loaded["oldest_case"]["application_number"],
+                    "reason": f"High load disparity ({most_loaded['open_count']} vs {least_loaded['open_count']} open cases). Suggest reassigning oldest unstarted case.",
+                    "advisory": "Advisory only, final decisions rest with the competent authority."
+                }
+
+        base_data["workload_balancer"] = {
+            "officers": officer_stats,
+            "suggestion": workload_suggestion
+        }
+    except Exception as we:
+        logger.warning(f"Workload balancer calculation error: {we}")
+        base_data["workload_balancer"] = {"officers": [], "suggestion": None}
+
     return base_data
 
 

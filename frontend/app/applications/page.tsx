@@ -99,6 +99,37 @@ export default function ApplicationsPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
+        {/* Natural Language Query Bar (§10.4) */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-blue-950/40 p-4 rounded-xl border border-blue-200/60 dark:border-blue-900/50">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
+              ✨ Natural-Language Query
+            </span>
+            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded-full font-semibold">
+              AI Powered · Safe Schema
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. 'Show me overdue scrutiny applications in western region' or 'delayed EVC visits'"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') load(); }}
+              className="flex-1 px-4 py-2 text-sm border border-blue-300 dark:border-blue-800 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            />
+            <button
+              onClick={load}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
+            >
+              Search
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+            Advisory only, final decisions rest with the competent authority. Queries execute through allow-listed schema filters.
+          </p>
+        </div>
+
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-60">

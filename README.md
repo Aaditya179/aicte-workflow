@@ -24,6 +24,8 @@ Smart India Hackathon · Problem statement **SIH26262**
 
 Nirikshan takes an AICTE approval application from submission to final decision. It tracks every stage against its statutory deadline, warns the people responsible before a deadline is missed, escalates when it is, and records every action in a tamper-evident audit trail.
 
+**Full solution document:** [SOLUTION.md](SOLUTION.md) covers the problem statement, every feature in detail, the tech stack and the architecture.
+
 ---
 
 ## Live deployment
@@ -41,6 +43,7 @@ Every demo account uses the password `password123`, and the welcome and login pa
 
 ## Contents
 
+- [Solution document](SOLUTION.md)
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
@@ -70,6 +73,7 @@ Every demo account uses the password `password123`, and the welcome and login pa
 **AI assistance (advisory only)**
 - Case summaries, deficiency letter drafts and wording polish for officers.
 - Natural-language questions over the caseload.
+- A daily brief on each dashboard: facts computed from live data, summarised by AI, with the summary dropped if it states a number the facts do not.
 - Reads uploaded leases and certificates (OCR): the expiry date for a person to confirm, plus the institution name, land area, survey number and start date as printed.
 - Runs on Groq with a failover key, and falls back to a mock mode when no key is set.
 
@@ -229,6 +233,7 @@ aicte-workflow/
 │   └── tests/                pytest suite
 ├── supabase/migrations/      Schema, row-level security, views, realtime
 ├── render.yaml               Render blueprint for the API
+├── SOLUTION.md               Problem, features, tech stack and architecture in detail
 └── docs/SPEC.md              Specification
 ```
 
@@ -274,11 +279,11 @@ pytest tests/
 ```
 
 The tests cover:
-- workflow transitions, and scheduler alerting and escalation;
+- workflow transitions and application routing, and scheduler alerting and escalation;
 - the audit chain, and risk and health scores;
-- Decision Assurance on cases G, H and J;
+- Decision Assurance on cases G and H, and the anomaly flag;
 - OCR, and EVC date suggestions;
-- channel delivery and webhooks, and the security checks.
+- channel delivery and webhooks, the daily brief, and the security checks.
 
 They run against the Supabase project in `backend/.env` and write test rows to it, so point them at a test project. Set `RESEND_API_KEY=` when running them, so emails are simulated rather than sent.
 

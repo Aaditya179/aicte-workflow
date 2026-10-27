@@ -82,17 +82,39 @@ def verify_chain() -> dict:
 
     prev_hash = "GENESIS"
     for row in rows:
+        # Recompute hash (handling entity_id None serialization)
+        raw_ent_id = row.get("entity_id")
+        ent_id = str(raw_ent_id) if raw_ent_id is not None else None
+
+        before_obj = json.loads(row["before"]) if isinstance(row.get("before"), str) else row.get("before")
+        after_obj = json.loads(row["after"]) if isinstance(row.get("after"), str) else row.get("after")
+
         payload = canonical({
             "actor": row.get("actor_id"),
             "role": row.get("actor_role"),
             "action": row.get("action"),
-            "entity": [row.get("entity_type"), row.get("entity_id")],
-            "before": json.loads(row["before"]) if row.get("before") else None,
-            "after": json.loads(row["after"]) if row.get("after") else None,
+            "entity": [row.get("entity_type"), ent_id],
+            "before": before_obj,
+            "after": after_obj,
             "reason": row.get("reason"),
         })
         expected = hashlib.sha256((prev_hash + payload).encode()).hexdigest()
         found = row["hash"]
+
+        if expected != found and ent_id is None:
+            # Fallback for rows where str(None) -> "None" was hashed
+            alt_payload = canonical({
+                "actor": row.get("actor_id"),
+                "role": row.get("actor_role"),
+                "action": row.get("action"),
+                "entity": [row.get("entity_type"), "None"],
+                "before": before_obj,
+                "after": after_obj,
+                "reason": row.get("reason"),
+            })
+            alt_expected = hashlib.sha256((prev_hash + alt_payload).encode()).hexdigest()
+            if alt_expected == found:
+                expected = found
 
         if expected != found:
             return {

@@ -52,7 +52,7 @@ export default function Navbar() {
               </Link>
 
               {/* Nav Links */}
-              <nav className="hidden md:flex items-center gap-1">
+              <nav className="hidden lg:flex items-center gap-1">
                 <Link
                   href="/applications"
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
@@ -64,6 +64,36 @@ export default function Navbar() {
                   Applications
                 </Link>
                 <Link
+                  href="/evc"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    pathname?.startsWith('/evc')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  EVC Visits
+                </Link>
+                <Link
+                  href="/undertakings"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    pathname?.startsWith('/undertakings')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Undertakings
+                </Link>
+                <Link
+                  href="/documents"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    pathname?.startsWith('/documents')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Documents
+                </Link>
+                <Link
                   href="/alerts"
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                     pathname?.startsWith('/alerts')
@@ -71,7 +101,7 @@ export default function Navbar() {
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Alerts Inbox
+                  Alerts
                 </Link>
                 {(userRole === 'admin' || userRole === 'bureau_officer') && (
                   <Link

@@ -6,10 +6,10 @@ flagging doubtful items for the officer (freshness, completeness, consistency, i
 Advisory only — never blocks an officer from recording a decision, but requires that every flag
 gets an acknowledged response or an override with an audited reason before commit.
 """
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from typing import Dict, Any, List, Optional
-import hashlib
 import json
+import logging
 
 from core.db import db
 from core import clock
@@ -18,9 +18,39 @@ from services import audit
 from core.security import AuthenticatedUser
 
 
+logger = logging.getLogger("aicte.assurance")
+
+OVERRIDE_ANOMALY_THRESHOLD = 3
+OVERRIDE_ANOMALY_WINDOW_DAYS = 30
+FAST_DECISION_SLA_FRACTION = 0.10
+
+
+def _parse_dt(val: Any) -> Optional[datetime]:
+    if not val:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _audit_actor(user_id: str, actor: Optional[AuthenticatedUser]) -> AuthenticatedUser:
+    """The acting officer for audit entries; looked up when the caller did not pass one."""
+    if actor:
+        return actor
+    prof = db.fetch_one("profiles", user_id=user_id) or {}
+    return AuthenticatedUser(id=user_id, role=prof.get("role") or "unknown", full_name=prof.get("full_name"))
+
+
 class AssuranceService:
     def __init__(self):
         self.db = db
+
+    def _require_decision_officer(self, decision: Optional[Dict[str, Any]], user_id: str) -> None:
+        """Only the officer who drafted a decision responds to its flags and commits it."""
+        if decision and decision.get("decided_by") and str(decision["decided_by"]) != str(user_id):
+            raise PermissionError("Only the officer who drafted this decision can respond to its flags or commit it")
 
     async def run_checks_for_application(
         self,
@@ -56,33 +86,34 @@ class AssuranceService:
         docs_inst = self.db.table("documents").select("*").eq("institution_id", app.get("institution_id")).execute().data or []
         # Merge unique documents
         all_docs_dict = {d["id"]: d for d in (docs_app + docs_inst)}
-        all_docs = list(all_docs_dict.values())
+        # Documents superseded by a verified renewal are no longer evidence
+        all_docs = [d for d in all_docs_dict.values() if d.get("status") != "renewed"]
 
-        # Check 1 & 2: Freshness & Tamper Detection
+        # Check 1: Evidence linking (the snapshot itself is written by create_decision_draft)
+        checks_results.append({
+            "check": "evidence_linking",
+            "result": "passed",
+            "detail": f"{len(all_docs)} current document(s) snapshotted as evidence"
+        })
+
+        # Check 2: Freshness
         stale_docs = []
-        tampered_docs = []
         for doc in all_docs:
             valid_until_str = doc.get("valid_until")
             if valid_until_str:
                 try:
-                    v_date = datetime.strptime(valid_until_str[:10], "%Y-%m-%d").date()
+                    v_date = datetime.strptime(str(valid_until_str)[:10], "%Y-%m-%d").date()
                     if v_date < today:
                         stale_docs.append(doc)
-                except Exception:
+                except ValueError:
                     pass
-
-            # Tamper check if sha256 exists
-            sha = doc.get("sha256")
-            if sha and doc.get("file_path"):
-                # If sha was recorded, verify it exists and matches pattern
-                pass
 
         if stale_docs:
             for s in stale_docs:
                 flags.append({
                     "check_type": "freshness",
                     "severity": "critical",
-                    "message": f"Document '{s.get('name') or s.get('doc_type')}' expired on {s.get('valid_until')}",
+                    "message": f"Document '{s.get('title') or s.get('doc_type')}' expired on {s.get('valid_until')}",
                     "entity_type": "documents",
                     "entity_id": s.get("id")
                 })
@@ -99,7 +130,8 @@ class AssuranceService:
             })
 
         # Check 3: Completeness against mandatory_evidence
-        template_code = app.get("template_code", "standard")
+        tmpl = self.db.fetch_one("workflow_templates", id=app.get("template_id")) or {}
+        template_code = tmpl.get("code", "")
         mandatory_reqs = self.db.table("mandatory_evidence").select("*") \
             .eq("template_code", template_code) \
             .eq("stage_key", stage_key).execute().data or []
@@ -114,7 +146,7 @@ class AssuranceService:
                 ]
 
         missing_mandatory = []
-        present_types = {d.get("doc_type") for d in all_docs if d.get("status") in ["verified", "active"]}
+        present_types = {d.get("doc_type") for d in all_docs if d.get("status") == "verified"}
         for req in mandatory_reqs:
             if req["doc_type"] not in present_types:
                 missing_mandatory.append(req)
@@ -198,37 +230,64 @@ class AssuranceService:
                 "detail": "Confirmed with central AICTE registry"
             })
 
-        # Check 6: Anomaly Check (Speed & Officer Override history)
+        # Check 6: Tamper detection. A document whose stored hash differs from the hash snapshotted
+        # by an earlier decision was replaced or edited after that decision relied on it.
+        tampered = []
+        hashed_docs = [d for d in all_docs if d.get("sha256")]
+        for doc in hashed_docs:
+            snaps = self.db.table("decision_evidence").select("doc_sha256").eq("document_id", doc["id"]).execute().data or []
+            if any(sn.get("doc_sha256") and sn["doc_sha256"] != doc["sha256"] for sn in snaps):
+                tampered.append(doc)
+        for doc in tampered:
+            flags.append({
+                "check_type": "tamper_detection",
+                "severity": "critical",
+                "message": f"Document '{doc.get('title') or doc.get('doc_type')}' changed after an earlier decision relied on it",
+                "entity_type": "documents",
+                "entity_id": doc.get("id")
+            })
+        checks_results.append({
+            "check": "tamper_detection",
+            "result": "flagged" if tampered else "passed",
+            "detail": f"{len(tampered)} document(s) changed since they were cited" if tampered
+                      else f"{len(hashed_docs)} hashed document(s) match their earlier snapshots"
+        })
+
+        # Check 7: Anomalies — repeated overrides by the officer, or a decision taken unusually fast
+        anomalies = []
         if decided_by:
-            # Overrides count in last 30 days
-            overrides = self.db.table("assurance_flags").select("id") \
+            window_start = sim_now - timedelta(days=OVERRIDE_ANOMALY_WINDOW_DAYS)
+            overrides = self.db.table("assurance_flags").select("id, responded_at") \
                 .eq("responded_by", decided_by) \
                 .eq("status", "overridden").execute().data or []
-            if len(overrides) >= 3:
-                flags.append({
+            recent = [o for o in overrides if (_parse_dt(o.get("responded_at")) or sim_now) >= window_start]
+            if len(recent) >= OVERRIDE_ANOMALY_THRESHOLD:
+                anomalies.append({
                     "check_type": "anomaly",
                     "severity": "warning",
-                    "message": f"Officer has recorded {len(overrides)} assurance overrides in the last 30 days",
+                    "message": f"Officer has recorded {len(recent)} assurance overrides in the last {OVERRIDE_ANOMALY_WINDOW_DAYS} days",
                     "entity_type": "profiles",
                     "entity_id": decided_by
                 })
-                checks_results.append({
-                    "check": "anomaly",
-                    "result": "flagged",
-                    "detail": "Officer override frequency exceeds statistical baseline"
+
+        entered, due = _parse_dt(app.get("stage_entered_at")), _parse_dt(app.get("due_at"))
+        if not is_post_decision and entered and due and due > entered:
+            elapsed = (sim_now - entered).total_seconds()
+            if 0 <= elapsed < FAST_DECISION_SLA_FRACTION * (due - entered).total_seconds():
+                anomalies.append({
+                    "check_type": "anomaly",
+                    "severity": "warning",
+                    "message": f"Decision taken {round(elapsed / 3600, 1)} hours into the stage, under "
+                               f"{int(FAST_DECISION_SLA_FRACTION * 100)}% of its SLA window",
+                    "entity_type": "applications",
+                    "entity_id": application_id
                 })
-            else:
-                checks_results.append({
-                    "check": "anomaly",
-                    "result": "passed",
-                    "detail": "No anomalous override pattern detected"
-                })
-        else:
-            checks_results.append({
-                "check": "anomaly",
-                "result": "passed",
-                "detail": "Officer activity within normal variance"
-            })
+        flags.extend(anomalies)
+        checks_results.append({
+            "check": "anomaly",
+            "result": "flagged" if anomalies else "passed",
+            "detail": "; ".join(a["message"] for a in anomalies) if anomalies else "No anomalous speed or override pattern detected"
+        })
 
         passed_count = sum(1 for c in checks_results if c["result"] == "passed")
         flagged_count = len(flags)
@@ -250,7 +309,8 @@ class AssuranceService:
         stage_key: str,
         outcome: str,
         remarks: str,
-        user_id: str
+        user_id: str,
+        actor: Optional[AuthenticatedUser] = None
     ) -> Dict[str, Any]:
         """
         Creates or updates a draft decision, snapshots all evidence documents,
@@ -298,12 +358,12 @@ class AssuranceService:
                     "decision_id": decision_id,
                     "document_id": d["id"],
                     "doc_version": d.get("version", 1),
-                    "doc_sha256": d.get("sha256") or hashlib.sha256((d.get("name") or "doc").encode()).hexdigest(),
+                    "doc_sha256": d.get("sha256"),
                     "valid_until": d.get("valid_until"),
                     "linked_at": sim_now.isoformat()
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not snapshot document {d.get('id')} for decision {decision_id}: {e}")
 
         # Insert assurance_report
         rep = self.db.insert("assurance_reports", {
@@ -331,18 +391,14 @@ class AssuranceService:
             })
             created_flags.append(inserted_flag)
 
-        try:
-            actor = AuthenticatedUser(id=user_id, email=f"{user_id}@demo.sih", role="officer")
-            audit.record(
-                actor=actor,
-                action="decision.draft_created",
-                entity_type="decisions",
-                entity_id=decision_id,
-                before=None,
-                after={"flagged": report_data["flagged"], "application_id": application_id}
-            )
-        except Exception:
-            pass
+        audit.record(
+            actor=_audit_actor(user_id, actor),
+            action="decision.draft_created",
+            entity_type="decisions",
+            entity_id=decision_id,
+            before=None,
+            after={"flagged": report_data["flagged"], "application_id": application_id}
+        )
 
         return {
             "decision_id": decision_id,
@@ -354,12 +410,15 @@ class AssuranceService:
             "flags": created_flags
         }
 
-    async def acknowledge_flag(self, flag_id: str, user_id: str) -> Dict[str, Any]:
+    async def acknowledge_flag(self, flag_id: str, user_id: str, actor: Optional[AuthenticatedUser] = None) -> Dict[str, Any]:
         """Acknowledge an advisory flag."""
         sim_now = clock.now()
         flag = self.db.fetch_one("assurance_flags", id=flag_id)
         if not flag:
             raise ValueError(f"Flag {flag_id} not found")
+        if flag.get("status") != "open":
+            raise ValueError(f"Flag already {flag.get('status')}")
+        self._require_decision_officer(self.db.fetch_one("decisions", id=flag["decision_id"]), user_id)
 
         updated = self.db.update("assurance_flags", flag_id, {
             "status": "acknowledged",
@@ -367,22 +426,25 @@ class AssuranceService:
             "responded_at": sim_now.isoformat()
         })
 
-        try:
-            actor = AuthenticatedUser(id=user_id, email=f"{user_id}@demo.sih", role="officer")
-            audit.record(
-                actor=actor,
-                action="assurance.flag_acknowledged",
-                entity_type="assurance_flags",
-                entity_id=flag_id,
-                before={"status": "open"},
-                after={"status": "acknowledged"}
-            )
-        except Exception:
-            pass
+        audit.record(
+            actor=_audit_actor(user_id, actor),
+            action="assurance.flag_acknowledged",
+            entity_type="assurance_flags",
+            entity_id=flag_id,
+            before={"status": "open"},
+            after={"status": "acknowledged"}
+        )
 
         return updated
 
-    async def override_flag(self, flag_id: str, user_id: str, reason: str) -> Dict[str, Any]:
+    async def override_flag(
+        self,
+        flag_id: str,
+        user_id: str,
+        reason: str,
+        actor: Optional[AuthenticatedUser] = None,
+        approved: bool = False,
+    ) -> Dict[str, Any]:
         """Override a flag with a mandatory reason."""
         if not reason or len(reason.strip()) < 5:
             raise ValueError("A documented justification reason of at least 5 characters is mandatory for overrides.")
@@ -391,6 +453,20 @@ class AssuranceService:
         flag = self.db.fetch_one("assurance_flags", id=flag_id)
         if not flag:
             raise ValueError(f"Flag {flag_id} not found")
+        expected = "pending_approval" if approved else "open"
+        if flag.get("status") != expected:
+            raise ValueError(f"Flag already {flag.get('status')}")
+        self._require_decision_officer(self.db.fetch_one("decisions", id=flag["decision_id"]), user_id)
+
+        from services import approvals
+        if not approved and approvals.overrides_need_approval():
+            # Maker-checker: the override waits for a bureau officer (§15.2)
+            request = approvals.create_request(
+                "assurance_override", "assurance_flags", flag_id, {"reason": reason.strip()},
+                _audit_actor(user_id, actor), reason=reason.strip(),
+            )
+            updated = self.db.update("assurance_flags", flag_id, {"status": "pending_approval"})
+            return {**updated, "approval_request_id": request["id"]}
 
         updated = self.db.update("assurance_flags", flag_id, {
             "status": "overridden",
@@ -399,34 +475,33 @@ class AssuranceService:
             "reason": reason.strip()
         })
 
-        try:
-            actor = AuthenticatedUser(id=user_id, email=f"{user_id}@demo.sih", role="officer")
-            audit.record(
-                actor=actor,
-                action="assurance.flag_overridden",
-                entity_type="assurance_flags",
-                entity_id=flag_id,
-                before={"status": "open"},
-                after={"status": "overridden"},
-                reason=reason.strip()
-            )
-        except Exception:
-            pass
+        audit.record(
+            actor=_audit_actor(user_id, actor),
+            action="assurance.flag_overridden",
+            entity_type="assurance_flags",
+            entity_id=flag_id,
+            before={"status": "open"},
+            after={"status": "overridden"},
+            reason=reason.strip()
+        )
 
         return updated
 
-    async def commit_decision(self, decision_id: str, user_id: str) -> Dict[str, Any]:
+    async def commit_decision(self, decision_id: str, user_id: str, actor: Optional[AuthenticatedUser] = None) -> Dict[str, Any]:
         """
         Commits a decision. Fails while any flag remains with status 'open'.
         """
         decision = self.db.fetch_one("decisions", id=decision_id)
         if not decision:
             raise ValueError(f"Decision {decision_id} not found")
+        if decision.get("status") != "draft":
+            raise ValueError(f"Decision is already {decision.get('status')}")
+        self._require_decision_officer(decision, user_id)
 
-        # Check for open flags
+        # Check for open flags (an override awaiting approval is still open)
         open_flags = self.db.table("assurance_flags").select("*") \
             .eq("decision_id", decision_id) \
-            .eq("status", "open").execute().data or []
+            .in_("status", ["open", "pending_approval"]).execute().data or []
 
         if open_flags:
             raise ValueError(
@@ -440,18 +515,14 @@ class AssuranceService:
             "decided_at": sim_now.isoformat()
         })
 
-        try:
-            actor = AuthenticatedUser(id=user_id, email=f"{user_id}@demo.sih", role="officer")
-            audit.record(
-                actor=actor,
-                action="decision.committed",
-                entity_type="decisions",
-                entity_id=decision_id,
-                before={"status": "draft"},
-                after={"status": "committed"}
-            )
-        except Exception:
-            pass
+        audit.record(
+            actor=_audit_actor(user_id, actor),
+            action="decision.committed",
+            entity_type="decisions",
+            entity_id=decision_id,
+            before={"status": "draft"},
+            after={"status": "committed"}
+        )
 
         return updated
 
@@ -459,43 +530,62 @@ class AssuranceService:
         """
         Daily scheduler job (§15.2):
         Reruns freshness and tamper checks for decisions committed in the last 12 months.
-        Creates post assurance reports and flags newly expired cited evidence.
+        Creates post assurance reports, flags newly expired or changed cited evidence once,
+        and alerts the deciding officer and the region's regional officers.
         """
         sim_now = clock.now()
-        committed_decisions = self.db.table("decisions").select("*, applications(id, application_number, region_id)") \
-            .eq("status", "committed").execute().data or []
+        window_start = sim_now - timedelta(days=365)
+        committed_decisions = self.db.table("decisions").select("*").eq("status", "committed").execute().data or []
 
         rechecked_count = 0
         new_flags_raised = 0
 
         for dec in committed_decisions:
+            decided_at = _parse_dt(dec.get("decided_at"))
+            if decided_at and decided_at < window_start:
+                continue
             dec_id = dec["id"]
-            # Fetch linked evidence snapshots
             evidences = self.db.table("decision_evidence").select("*").eq("decision_id", dec_id).execute().data or []
-            flags = []
 
+            # Evidence already flagged by an earlier recheck is not flagged again
+            existing = self.db.table("assurance_flags").select("entity_id, check_type").eq("decision_id", dec_id).execute().data or []
+            already = {(f.get("check_type"), str(f.get("entity_id"))) for f in existing}
+
+            flags = []
             for ev in evidences:
+                doc_label = f"Document #{str(ev.get('document_id'))[:8]}"
                 valid_until_str = ev.get("valid_until")
-                if valid_until_str:
+                if valid_until_str and ("post_decision_freshness", str(ev.get("id"))) not in already:
                     try:
-                        v_date = datetime.strptime(valid_until_str[:10], "%Y-%m-%d").date()
-                        if v_date < sim_now.date():
-                            flags.append({
-                                "check_type": "post_decision_freshness",
-                                "severity": "warning",
-                                "message": f"Evidence relied upon during approval expired on {valid_until_str} (Document #{ev.get('document_id')[:8]})",
-                                "entity_type": "decision_evidence",
-                                "entity_id": ev.get("id")
-                            })
-                    except Exception:
-                        pass
+                        v_date = datetime.strptime(str(valid_until_str)[:10], "%Y-%m-%d").date()
+                    except ValueError:
+                        v_date = None
+                    if v_date and v_date < sim_now.date():
+                        flags.append({
+                            "check_type": "post_decision_freshness",
+                            "severity": "warning",
+                            "message": f"Evidence relied upon during approval expired on {valid_until_str} ({doc_label})",
+                            "entity_type": "decision_evidence",
+                            "entity_id": ev.get("id")
+                        })
+
+                if ev.get("doc_sha256") and ("post_decision_tamper", str(ev.get("id"))) not in already:
+                    doc = self.db.fetch_one("documents", id=ev.get("document_id")) or {}
+                    if doc.get("sha256") and doc["sha256"] != ev["doc_sha256"]:
+                        flags.append({
+                            "check_type": "post_decision_tamper",
+                            "severity": "critical",
+                            "message": f"Evidence changed after the decision relied on it ({doc_label})",
+                            "entity_type": "decision_evidence",
+                            "entity_id": ev.get("id")
+                        })
 
             if flags:
                 rep = self.db.insert("assurance_reports", {
                     "decision_id": dec_id,
                     "kind": "post",
                     "generated_at": sim_now.isoformat(),
-                    "checks": [{"check": "post_decision_freshness", "result": "flagged", "detail": f"{len(flags)} expired evidence items"}],
+                    "checks": [{"check": f["check_type"], "result": "flagged", "detail": f["message"]} for f in flags],
                     "passed": 0,
                     "flagged": len(flags)
                 })
@@ -512,6 +602,7 @@ class AssuranceService:
                         "status": "open"
                     })
                     new_flags_raised += 1
+                self._alert_post_decision_flags(dec, flags, sim_now)
 
             rechecked_count += 1
 
@@ -520,6 +611,35 @@ class AssuranceService:
             "new_flags_raised": new_flags_raised,
             "rechecked_at": sim_now.isoformat()
         }
+
+    def _alert_post_decision_flags(self, decision: Dict[str, Any], flags: List[Dict[str, Any]], sim_now: datetime) -> None:
+        """Raise one alert per recheck to the deciding officer and the region's regional officers."""
+        from services import notifier
+        app = self.db.fetch_one("applications", id=decision.get("application_id")) or {}
+        targets = [decision["decided_by"]] if decision.get("decided_by") else []
+        if app.get("region_id"):
+            targets += [p["user_id"] for p in self.db.fetch_all("profiles", region_id=app["region_id"], role="regional_officer")]
+        message = f"Post-decision recheck on {app.get('application_no', 'a committed decision')}: {len(flags)} new evidence flag(s)."
+        severity = "critical" if any(f["severity"] == "critical" for f in flags) else "warning"
+        alert_id = None
+        try:
+            # Level = the simulated day's ordinal, so each day's recheck gets its own alert under the unique key
+            res = self.db.table("alerts").insert({
+                "entity_type": "decision",
+                "entity_id": decision["id"],
+                "kind": "expiry",
+                "level": sim_now.toordinal(),
+                "severity": severity,
+                "message": message,
+                "status": "open",
+                "target_role": "regional_officer",
+                "fired_at": sim_now.isoformat()
+            }).execute()
+            alert_id = res.data[0]["id"] if res.data else None
+        except Exception as e:
+            logger.warning(f"Could not raise post-decision alert for decision {decision['id']}: {e}")
+        if targets:
+            notifier.notify_users(list(set(targets)), "Post-decision assurance flag", message, alert_id=alert_id, severity=severity, kind="expiry")
 
 
 assurance_service = AssuranceService()

@@ -74,8 +74,15 @@ def verify_chain() -> dict:
     Walk the audit log in sequence order and recompute each hash.
     Returns {ok: True} or {ok: False, broken_at_seq: N, expected: ..., found: ...}
     """
-    res = _supabase.table("audit_log").select("*").order("seq", desc=False).execute()
-    rows = res.data or []
+    # PostgREST caps each response (1000 rows by default), so read the whole log in pages
+    rows = []
+    page = 1000
+    while True:
+        res = _supabase.table("audit_log").select("*").order("seq", desc=False).range(len(rows), len(rows) + page - 1).execute()
+        batch = res.data or []
+        rows.extend(batch)
+        if len(batch) < page:
+            break
 
     if not rows:
         return {"ok": True, "entries_verified": 0}

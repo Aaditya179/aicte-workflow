@@ -31,7 +31,9 @@ def compute_application_risk(application_id: str, sim_now: datetime) -> Dict[str
     app = app_res.data[0]
     inst = app.get("institutions") or {}
     region_id = inst.get("region_id") or app.get("region_id")
-    health_score = inst.get("health_score", 100) or 100
+    health_score = inst.get("health_score")
+    if health_score is None:
+        health_score = 100
 
     reasons: List[Dict[str, Any]] = []
 
@@ -61,23 +63,27 @@ def compute_application_risk(application_id: str, sim_now: datetime) -> Dict[str
 
     # 2. Officer load (20 * min(1, officer open cases / (2 * regional average)))
     officer_load_score = 0.0
-    current_owner_id = app.get("current_owner_id")
-    if current_owner_id and region_id:
+    assigned_to = app.get("assigned_to")
+    if assigned_to and region_id:
         try:
-            # Regional officers
-            officers_res = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", "regional_officer").execute()
-            officer_ids = [o["user_id"] for o in (officers_res.data or [])]
+            # Peers: officers in the region with the same role as the assigned officer
+            owner_res = _supabase.table("profiles").select("role").eq("user_id", assigned_to).limit(1).execute()
+            owner_role = owner_res.data[0]["role"] if owner_res.data else None
+            officer_ids = []
+            if owner_role:
+                officers_res = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", owner_role).execute()
+                officer_ids = [o["user_id"] for o in (officers_res.data or [])]
             if officer_ids:
-                # Open cases in region
-                open_apps = _supabase.table("applications").select("current_owner_id").in_("current_owner_id", officer_ids).eq("status", "in_progress").execute()
+                # Open cases held by those officers
+                open_apps = _supabase.table("applications").select("assigned_to").in_("assigned_to", officer_ids).eq("status", "in_progress").execute()
                 total_open = len(open_apps.data or [])
                 avg_load = total_open / max(1, len(officer_ids))
-                
-                officer_cases = sum(1 for a in (open_apps.data or []) if a.get("current_owner_id") == current_owner_id)
+
+                officer_cases = sum(1 for a in (open_apps.data or []) if a.get("assigned_to") == assigned_to)
                 denom = max(1.0, 2.0 * avg_load)
                 load_ratio = min(1.0, officer_cases / denom)
                 officer_load_score = 20.0 * load_ratio
-                
+
                 reasons.append({
                     "factor": "Officer Workload",
                     "score": round(officer_load_score, 1),

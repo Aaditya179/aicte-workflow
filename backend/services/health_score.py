@@ -35,7 +35,7 @@ def compute_institution_health_score(institution_id: str, sim_now: datetime) -> 
     # 1. Overdue undertakings (-10 each)
     uts_res = _supabase.table("undertakings").select("id, title, due_at, status") \
         .eq("institution_id", institution_id) \
-        .in_("status", ["pending", "submitted"]) \
+        .in_("status", ["pending", "rejected", "overdue"]) \
         .lt("due_at", now_iso).execute()
     overdue_uts = uts_res.data or []
     if overdue_uts:
@@ -60,10 +60,13 @@ def compute_institution_health_score(institution_id: str, sim_now: datetime) -> 
         if not doc.get("valid_until"):
             continue
         try:
-            vu = datetime.fromisoformat(doc["valid_until"].replace("Z", "+00:00"))
-            if vu < sim_now and doc.get("status") not in ("renewed", "verified"):
+            if doc.get("status") == "renewed":
+                continue  # superseded by a verified renewal
+            vu = datetime.fromisoformat(doc["valid_until"][:10]).date()
+            today = sim_now.date()
+            if vu < today:
                 expired_unrenewed.append(doc)
-            elif sim_now <= vu <= (sim_now + timedelta(days=30)):
+            elif vu <= today + timedelta(days=30):
                 expiring_soon.append(doc)
         except Exception:
             continue
@@ -113,26 +116,17 @@ def compute_institution_health_score(institution_id: str, sim_now: datetime) -> 
         })
 
     # 5. Unacknowledged critical alerts (-5 each)
-    # Alerts linked to institution or its applications
-    alert_query = _supabase.table("alerts").select("id, severity, status") \
-        .eq("severity", "critical") \
-        .eq("status", "open")
-    
-    # Check alerts where entity_id in app_ids or entity_id == institution_id
+    # Alerts on the institution's applications, undertakings and documents
+    ut_ids = [u["id"] for u in (_supabase.table("undertakings").select("id").eq("institution_id", institution_id).execute().data or [])]
+    entity_ids = app_ids + ut_ids + [d["id"] for d in docs] + [institution_id]
     crit_alerts = []
-    if app_ids:
-        app_alerts = _supabase.table("alerts").select("id") \
+    for i in range(0, len(entity_ids), 100):
+        res = _supabase.table("alerts").select("id") \
             .eq("severity", "critical") \
             .eq("status", "open") \
-            .in_("entity_id", app_ids).execute()
-        crit_alerts.extend(app_alerts.data or [])
+            .in_("entity_id", entity_ids[i:i + 100]).execute()
+        crit_alerts.extend(res.data or [])
 
-    inst_alerts = _supabase.table("alerts").select("id") \
-        .eq("severity", "critical") \
-        .eq("status", "open") \
-        .eq("entity_id", institution_id).execute()
-    crit_alerts.extend(inst_alerts.data or [])
-    
     # Deduplicate
     unique_crit_alert_ids = set(a["id"] for a in crit_alerts)
     if unique_crit_alert_ids:
@@ -177,7 +171,8 @@ def recompute_all_health_scores(sim_now: datetime) -> int:
         for inst in institutions:
             calc = compute_institution_health_score(inst["id"], sim_now)
             _supabase.table("institutions").update({
-                "health_score": calc["health_score"]
+                "health_score": calc["health_score"],
+                "health_updated_at": sim_now.isoformat()
             }).eq("id", inst["id"]).execute()
             updated += 1
         return updated

@@ -138,7 +138,7 @@ def _generate_excel(sheet_title: str, headers: List[str], data_rows: List[List[A
 async def get_report(
     report_type: str,
     format: str = Query("json", pattern="^(json|pdf|xlsx)$"),
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "bureau_officer", "auditor"]))
 ):
     """
     Export reports as JSON, PDF, or Excel (Section 6, 7.1):
@@ -150,11 +150,21 @@ async def get_report(
     """
     now = clock.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+    if report_type == "audit" and user.role not in ("bureau_officer", "auditor"):
+        raise HTTPException(status_code=403, detail="The audit trail report is for bureau officers and auditors")
+    # Regional staff report on their own region only
+    own_region = None
+    if user.role in ("scrutiny_officer", "regional_officer") and user.region_id:
+        reg = _supabase.table("regions").select("name").eq("id", user.region_id).limit(1).execute().data
+        own_region = reg[0]["name"] if reg else ""
+
+    def scoped(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return rows if own_region is None else [r for r in rows if r.get("region_name") == own_region]
 
     if report_type == "pendency":
         title = "Stage & Regional Pendency Analysis"
         res = _supabase.table("v_pendency_by_stage_region").select("*").execute()
-        rows = res.data or []
+        rows = scoped(res.data or [])
         headers = ["Region", "Stage", "Total Cases", "Open Cases", "Overdue Cases", "Avg Stage Age (Days)", "Avg Total Age (Days)"]
         data_rows = [
             [
@@ -172,7 +182,7 @@ async def get_report(
     elif report_type == "overdue_summary":
         title = "Regional Overdue Governance Summary"
         res = _supabase.table("v_overdue_summary").select("*").execute()
-        rows = res.data or []
+        rows = scoped(res.data or [])
         headers = ["Region", "Overdue Applications", "Overdue EVC Visits", "Overdue Undertakings", "Expired / Expiring Docs"]
         data_rows = [
             [
@@ -188,7 +198,7 @@ async def get_report(
     elif report_type == "officer_workload":
         title = "Officer Workload & SLA Metrics"
         res = _supabase.table("v_officer_workload").select("*").execute()
-        rows = res.data or []
+        rows = scoped(res.data or [])
         headers = ["Officer Name", "Role", "Region", "Open Cases", "Overdue Cases", "Avg Case Age (Days)"]
         data_rows = [
             [
@@ -205,7 +215,7 @@ async def get_report(
     elif report_type == "compliance":
         title = "Institutional Compliance & Health Score"
         res = _supabase.table("v_institution_compliance").select("*").execute()
-        rows = res.data or []
+        rows = scoped(res.data or [])
         headers = ["Institution Name", "AICTE ID", "Region", "Health Score", "Pending Undertakings", "Overdue Undertakings", "Expiring Docs", "Expired Docs"]
         data_rows = [
             [
@@ -241,6 +251,15 @@ async def get_report(
         ]
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported report type: {report_type}")
+
+    # Every export is logged (§15.8)
+    if format in ("pdf", "xlsx"):
+        audit_service.record(
+            actor=user, action="REPORT_EXPORTED", entity_type="report", entity_id=None,
+            before=None, after={"report_type": report_type, "format": format, "rows": len(data_rows),
+                                "region": own_region or "all"},
+            reason=f"Exported {report_type} as {format}",
+        )
 
     # Format return
     if format == "pdf":

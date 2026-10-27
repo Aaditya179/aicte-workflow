@@ -55,7 +55,8 @@ def test_setup():
     clock.reset()
     now = clock.now()
     
-    inst = _supabase.table("institutions").select("id").limit(1).execute()
+    # The demo institution: in the Western region and owned by institution@demo.sih
+    inst = _supabase.table("institutions").select("id").eq("aicte_id", "1-DEMO-001").limit(1).execute()
     inst_id = inst.data[0]["id"]
     
     west = _supabase.table("regions").select("id").eq("name", "Western").limit(1).execute()

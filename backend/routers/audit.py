@@ -7,7 +7,7 @@ router = APIRouter(prefix="/audit", tags=["Audit"])
 
 @router.get("")
 async def list_audit_log(
-    actor: AuthenticatedUser = Depends(require_role(["bureau_officer", "admin"])),
+    actor: AuthenticatedUser = Depends(require_role(["bureau_officer", "admin", "auditor"])),
 ):
     from supabase import create_client
     from core.config import settings
@@ -18,6 +18,6 @@ async def list_audit_log(
 
 @router.get("/verify")
 async def verify_audit_chain(
-    actor: AuthenticatedUser = Depends(require_role(["bureau_officer", "admin"])),
+    actor: AuthenticatedUser = Depends(require_role(["bureau_officer", "admin", "auditor"])),
 ):
     return audit_service.verify_chain()

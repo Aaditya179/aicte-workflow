@@ -96,7 +96,7 @@ function UndertakingsContent() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/undertakings`,
+        `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '')}/api/v1/undertakings`,
         {
           method: 'POST',
           headers: {
@@ -130,7 +130,7 @@ function UndertakingsContent() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/undertakings/${submitModalUt.id}/submit`,
+        `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '')}/api/v1/undertakings/${submitModalUt.id}/submit`,
         {
           method: 'POST',
           headers: {
@@ -158,7 +158,7 @@ function UndertakingsContent() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/undertakings/${verifyModalUt.id}/verify`,
+        `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '')}/api/v1/undertakings/${verifyModalUt.id}/verify`,
         {
           method: 'POST',
           headers: {
@@ -183,7 +183,7 @@ function UndertakingsContent() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/undertakings/${rejectModalUt.id}/reject`,
+        `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/api\/v1\/?$/, '')}/api/v1/undertakings/${rejectModalUt.id}/reject`,
         {
           method: 'POST',
           headers: {
@@ -208,30 +208,30 @@ function UndertakingsContent() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'verified':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"><CheckCircle2 className="w-3.5 h-3.5" /> Verified</span>;
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"><CheckCircle2 className="w-3.5 h-3.5" /> Verified</span>;
       case 'submitted':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"><Clock className="w-3.5 h-3.5" /> In Review</span>;
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE]"><Clock className="w-3.5 h-3.5" /> In Review</span>;
       case 'rejected':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"><XCircle className="w-3.5 h-3.5" /> Rejected</span>;
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-800 border border-red-200"><XCircle className="w-3.5 h-3.5" /> Rejected</span>;
       case 'overdue':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"><AlertCircle className="w-3.5 h-3.5" /> Overdue</span>;
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200"><AlertCircle className="w-3.5 h-3.5" /> Overdue</span>;
       default:
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"><Clock className="w-3.5 h-3.5" /> Pending Evidence</span>;
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200"><Clock className="w-3.5 h-3.5" /> Pending Evidence</span>;
     }
   };
 
   const isOfficer = role === 'regional_officer' || role === 'bureau_officer' || role === 'admin';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 text-[#1C1917]">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <FileCheck className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          <h1 className="text-2xl font-serif font-bold tracking-tight text-[#1C1917] flex items-center gap-2">
+            <FileCheck className="w-6 h-6 text-[#C25E26]" />
             Institutional Undertakings & Conditional Approvals
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-stone-500">
             Monitor compliance conditions, evidentiary proof submissions, and officer review clearances.
           </p>
         </div>
@@ -243,10 +243,10 @@ function UndertakingsContent() {
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition ${
+                className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition cursor-pointer ${
                   statusFilter === f
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    ? 'bg-[#C25E26] text-white shadow-2xs'
+                    : 'bg-white text-stone-700 border border-[#E8E2D8] hover:bg-[#FAF7F2]'
                 }`}
               >
                 {f}
@@ -257,7 +257,7 @@ function UndertakingsContent() {
           {isOfficer && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm transition"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-[#C25E26] text-white hover:bg-[#A84A19] shadow-2xs transition cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Issue Undertaking
             </button>
@@ -266,21 +266,21 @@ function UndertakingsContent() {
       </div>
 
       {/* Advisory Banner */}
-      <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+      <div className="p-3 bg-[#FBF0E4]/60 border border-[#F0D5BE] rounded-xl flex items-center gap-2 text-xs text-[#C25E26]">
         <Shield className="w-4 h-4 shrink-0" />
         <span>Advisory only, final decisions rest with the competent authority.</span>
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-[#E8E2D8] rounded-2xl shadow-2xs overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-slate-400">Loading undertakings...</div>
+          <div className="py-16 text-center text-stone-400">Loading undertakings...</div>
         ) : undertakings.length === 0 ? (
-          <div className="py-16 text-center text-slate-400">No undertakings recorded.</div>
+          <div className="py-16 text-center text-stone-400">No undertakings recorded.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left text-sm text-stone-700">
+              <thead className="bg-[#FAF7F2] text-xs font-semibold text-stone-600 uppercase tracking-wider border-b border-[#E8E2D8]">
                 <tr>
                   <th className="py-3 px-4">Title & Condition</th>
                   <th className="py-3 px-4">Institution</th>
@@ -291,46 +291,46 @@ function UndertakingsContent() {
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-[#E8E2D8]">
                 {undertakings.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
+                  <tr key={u.id} className="hover:bg-[#FAF7F2]/60 transition">
                     <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-900 dark:text-white">{u.title}</div>
+                      <div className="font-semibold text-[#1C1917]">{u.title}</div>
                       {u.description && (
-                        <div className="text-xs text-slate-400 max-w-sm truncate">{u.description}</div>
+                        <div className="text-xs text-stone-500 max-w-sm truncate">{u.description}</div>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
-                      <div className="font-medium text-slate-900 dark:text-white">
+                      <div className="font-medium text-[#1C1917]">
                         {u.institutions?.name || 'Institution'}
                       </div>
-                      <div className="text-xs text-slate-400 font-mono">
+                      <div className="text-xs text-stone-400 font-mono">
                         {u.institutions?.aicte_id || u.institutions?.city || ''}
                       </div>
                     </td>
                     <td className="py-3.5 px-4 capitalize text-xs">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-medium">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#FAF7F2] border border-[#E8E2D8] text-stone-700 font-medium">
                         {u.condition_type || 'General'}
                       </span>
                     </td>
                     <td className="py-3.5 px-4">{getStatusBadge(u.status)}</td>
-                    <td className="py-3.5 px-4 text-xs font-mono">
+                    <td className="py-3.5 px-4 text-xs font-mono text-stone-600">
                       {new Date(u.due_at).toLocaleDateString()}
                     </td>
                     <td className="py-3.5 px-4 text-xs">
                       {u.documents ? (
-                        <span className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline cursor-pointer">
+                        <span className="text-[#C25E26] font-medium hover:underline cursor-pointer">
                           {u.documents.title}
                         </span>
                       ) : (
-                        <span className="text-slate-400 italic">None attached</span>
+                        <span className="text-stone-400 italic">None attached</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-2">
                       {(u.status === 'pending' || u.status === 'rejected') && (
                         <button
                           onClick={() => setSubmitModalUt(u)}
-                          className="px-2.5 py-1 text-xs font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                          className="px-3 py-1 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] transition cursor-pointer shadow-2xs"
                         >
                           Submit Proof
                         </button>
@@ -342,7 +342,7 @@ function UndertakingsContent() {
                               setVerifyModalUt(u);
                               setVerifyRemarks('Evidence verified and accepted');
                             }}
-                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                            className="px-3 py-1 text-xs font-medium rounded-full bg-emerald-700 text-white hover:bg-emerald-800 transition cursor-pointer shadow-2xs"
                           >
                             Verify
                           </button>
@@ -351,7 +351,7 @@ function UndertakingsContent() {
                               setRejectModalUt(u);
                               setRejectRemarks('');
                             }}
-                            className="px-2.5 py-1 text-xs font-medium rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 hover:bg-rose-100 transition"
+                            className="px-3 py-1 text-xs font-medium rounded-full bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
                           >
                             Reject
                           </button>
@@ -368,20 +368,20 @@ function UndertakingsContent() {
 
       {/* Submit Evidence Modal */}
       {submitModalUt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs">
+          <div className="bg-white border border-[#E8E2D8] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 text-[#1C1917]">
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Upload className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-serif font-bold text-[#1C1917] flex items-center gap-2">
+                <Upload className="w-5 h-5 text-[#C25E26]" />
                 Submit Compliance Evidence
               </h3>
-              <button onClick={() => setSubmitModalUt(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSubmitModalUt(null)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleSubmitEvidence} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-stone-700 mb-1">
                   Evidence Document Title
                 </label>
                 <input
@@ -389,11 +389,11 @@ function UndertakingsContent() {
                   required
                   value={evidenceTitle}
                   onChange={(e) => setEvidenceTitle(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl text-sm dark:bg-slate-800 dark:border-slate-700"
+                  className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-stone-700 mb-1">
                   Storage Path / URI
                 </label>
                 <input
@@ -401,24 +401,24 @@ function UndertakingsContent() {
                   required
                   value={evidencePath}
                   onChange={(e) => setEvidencePath(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl text-sm dark:bg-slate-800 dark:border-slate-700 font-mono text-xs"
+                  className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 />
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-stone-500">
                 Submitting updates condition status to &apos;submitted&apos; and notifies the assigned Regional Officer for verification.
               </p>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setSubmitModalUt(null)}
-                  className="px-4 py-2 text-xs font-medium rounded-xl border border-slate-300 dark:border-slate-700"
+                  className="px-4 py-2 text-xs font-medium rounded-full border border-[#E8E2D8] hover:bg-[#FAF7F2] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-xs font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium rounded-full bg-[#C25E26] text-white hover:bg-[#A84A19] disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
                   {submitting ? 'Submitting...' : 'Upload & Submit'}
                 </button>
@@ -430,20 +430,20 @@ function UndertakingsContent() {
 
       {/* Verify Modal */}
       {verifyModalUt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs">
+          <div className="bg-white border border-[#E8E2D8] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 text-[#1C1917]">
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <h3 className="font-serif font-bold text-[#1C1917] flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-700" />
                 Approve & Clear Undertaking
               </h3>
-              <button onClick={() => setVerifyModalUt(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setVerifyModalUt(null)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleVerify} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-stone-700 mb-1">
                   Verification Remarks
                 </label>
                 <textarea
@@ -451,24 +451,24 @@ function UndertakingsContent() {
                   required
                   value={verifyRemarks}
                   onChange={(e) => setVerifyRemarks(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl text-sm dark:bg-slate-800 dark:border-slate-700"
+                  className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 />
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-stone-500">
                 Verification auto-resolves any open SLA alerts for this undertaking and chains a signed audit entry.
               </p>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setVerifyModalUt(null)}
-                  className="px-4 py-2 text-xs font-medium rounded-xl border border-slate-300 dark:border-slate-700"
+                  className="px-4 py-2 text-xs font-medium rounded-full border border-[#E8E2D8] hover:bg-[#FAF7F2] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-xs font-medium rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium rounded-full bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
                   {submitting ? 'Verifying...' : 'Clear Condition'}
                 </button>
@@ -480,20 +480,20 @@ function UndertakingsContent() {
 
       {/* Reject Modal */}
       {rejectModalUt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs">
+          <div className="bg-white border border-[#E8E2D8] rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 text-[#1C1917]">
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="font-serif font-bold text-[#1C1917] flex items-center gap-2">
                 <XCircle className="w-5 h-5 text-rose-600" />
                 Reject Evidence & Mandate Revision
               </h3>
-              <button onClick={() => setRejectModalUt(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setRejectModalUt(null)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleReject} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-stone-700 mb-1">
                   Reason for Rejection / Missing Requirements
                 </label>
                 <textarea
@@ -502,11 +502,11 @@ function UndertakingsContent() {
                   value={rejectRemarks}
                   onChange={(e) => setRejectRemarks(e.target.value)}
                   placeholder="e.g. Incomplete photo evidence or illegible certificate..."
-                  className="w-full px-3 py-2 border rounded-xl text-sm dark:bg-slate-800 dark:border-slate-700"
+                  className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-stone-700 mb-1">
                   Extension Days for Re-submission
                 </label>
                 <input
@@ -516,21 +516,21 @@ function UndertakingsContent() {
                   required
                   value={rejectExtension}
                   onChange={(e) => setRejectExtension(Number(e.target.value))}
-                  className="w-full px-3 py-2 border rounded-xl text-sm dark:bg-slate-800 dark:border-slate-700"
+                  className="w-full px-3 py-2 border border-[#E8E2D8] rounded-xl text-sm bg-white text-[#1C1917] focus:outline-none focus:ring-1 focus:ring-[#C25E26]"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setRejectModalUt(null)}
-                  className="px-4 py-2 text-xs font-medium rounded-xl border border-slate-300 dark:border-slate-700"
+                  className="px-4 py-2 text-xs font-medium rounded-full border border-[#E8E2D8] hover:bg-[#FAF7F2] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-xs font-medium rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium rounded-full bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer shadow-2xs"
                 >
                   {submitting ? 'Rejecting...' : 'Reject with Extension'}
                 </button>

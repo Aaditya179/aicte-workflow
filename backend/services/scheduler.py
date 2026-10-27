@@ -4,10 +4,12 @@ Runs SLA monitoring, generates reminder/overdue/escalation alerts,
 notifies target users, auto-resolves cleared alerts, and tracks execution runs.
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from supabase import create_client
+import asyncio
+import concurrent.futures
 import logging
-import json
+import math
 
 from core.config import settings
 from core import clock
@@ -29,32 +31,63 @@ def _parse_dt(val: Any) -> Optional[datetime]:
         return None
 
 
-def get_sla_rule(scope: str, stage_key: Optional[str] = None, region_id: Optional[str] = None) -> Dict[str, Any]:
-    """Load matching SLA rule with fallback."""
+_DEFAULT_CHAIN = {
+    "levels": [
+        {"level": 1, "after_days_overdue": 0, "notify_role": "assigned_officer", "channels": ["in_app", "email"]},
+        {"level": 2, "after_days_overdue": 3, "notify_role": "regional_officer", "channels": ["in_app", "email", "sms"]},
+        {"level": 3, "after_days_overdue": 7, "notify_role": "bureau_officer", "channels": ["in_app", "email", "sms", "whatsapp"]},
+    ],
+    "ack_timeout_hours": 48
+}
+
+# alerts.cycle (migration 0005) lets the same reminder fire again in a new stage or after a
+# deadline is reset. Probed once so the scheduler still runs before that migration is applied.
+_alert_cycle_supported: Optional[bool] = None
+
+
+def _supports_alert_cycle() -> bool:
+    global _alert_cycle_supported
+    if _alert_cycle_supported is None:
+        try:
+            _supabase.table("alerts").select("cycle").limit(1).execute()
+            _alert_cycle_supported = True
+        except Exception:
+            logger.warning("alerts.cycle column missing (apply migration 0005); stage-specific alert keys are disabled")
+            _alert_cycle_supported = False
+    return _alert_cycle_supported
+
+
+def _alert_cycle(entity_type: str, entity_row: Dict[str, Any]) -> str:
+    """The period an alert belongs to: a stage visit for applications, a deadline for undertakings."""
+    field = {"application_stage": "stage_entered_at", "undertaking": "due_at"}.get(entity_type)
+    dt = _parse_dt(entity_row.get(field)) if field else None
+    return str(math.floor(dt.timestamp())) if dt else ""
+
+
+def _load_rules(scope: str) -> List[Dict[str, Any]]:
     try:
-        # 1. Region-specific
-        if region_id and stage_key:
-            res = _supabase.table("sla_rules").select("*") \
-                .eq("scope", scope).eq("stage_key", stage_key).eq("region_id", region_id) \
-                .eq("is_active", True).limit(1).execute()
-            if res.data:
-                return res.data[0]
-
-        # 2. Stage-key wide
-        if stage_key:
-            res = _supabase.table("sla_rules").select("*") \
-                .eq("scope", scope).eq("stage_key", stage_key) \
-                .eq("is_active", True).limit(1).execute()
-            if res.data:
-                return res.data[0]
-
-        # 3. Scope wide
-        res = _supabase.table("sla_rules").select("*") \
-            .eq("scope", scope).eq("is_active", True).limit(1).execute()
-        if res.data:
-            return res.data[0]
+        return _supabase.table("sla_rules").select("*").eq("scope", scope).eq("is_active", True).execute().data or []
     except Exception as e:
-        logger.warning(f"Error loading SLA rule for {scope}/{stage_key}: {e}")
+        logger.warning(f"Error loading SLA rules for {scope}: {e}")
+        return []
+
+
+def get_sla_rule(
+    scope: str,
+    stage_key: Optional[str] = None,
+    region_id: Optional[str] = None,
+    rules: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Most specific matching SLA rule: region-specific over national, stage-specific over scope-wide."""
+    if rules is None:
+        rules = _load_rules(scope)
+    candidates = [
+        r for r in rules
+        if r.get("region_id") in (None, region_id)
+        and (stage_key is None or r.get("stage_key") in (None, stage_key))
+    ]
+    if candidates:
+        return max(candidates, key=lambda r: (r.get("region_id") is not None, r.get("stage_key") is not None))
 
     # Fallback defaults
     if scope == "document_expiry":
@@ -63,104 +96,93 @@ def get_sla_rule(scope: str, stage_key: Optional[str] = None, region_id: Optiona
 
 
 def get_escalation_chain(scope: str, region_id: Optional[str] = None) -> Dict[str, Any]:
-    """Load escalation chain for a given scope."""
+    """
+    Escalation chain for a scope. Region-specific rows override the national row; scopes without
+    their own chain use the application_stage chain, which is the national default.
+    """
     try:
-        if region_id:
-            res = _supabase.table("escalation_chains").select("*") \
-                .eq("scope", scope).eq("region_id", region_id).limit(1).execute()
-            if res.data:
-                return res.data[0]
-
-        res = _supabase.table("escalation_chains").select("*") \
-            .eq("scope", scope).limit(1).execute()
-        if res.data:
-            return res.data[0]
+        rows = _supabase.table("escalation_chains").select("*").in_("scope", [scope, "application_stage"]).execute().data or []
+        for want_scope in (scope, "application_stage"):
+            for want_region in (region_id, None):
+                for row in rows:
+                    if row.get("scope") == want_scope and row.get("region_id") == want_region:
+                        return row
     except Exception as e:
         logger.warning(f"Error loading escalation chain: {e}")
+    return _DEFAULT_CHAIN
 
-    # Default chain from spec §9
-    return {
-        "levels": [
-            {"level": 1, "after_days_overdue": 0, "notify_role": "assigned_officer"},
-            {"level": 2, "after_days_overdue": 3, "notify_role": "regional_officer"},
-            {"level": 3, "after_days_overdue": 7, "notify_role": "bureau_officer"},
-        ],
-        "ack_timeout_hours": 48
-    }
+
+def _profile_ids(**filters) -> List[str]:
+    q = _supabase.table("profiles").select("user_id")
+    for k, v in filters.items():
+        q = q.eq(k, v)
+    return [u["user_id"] for u in (q.execute().data or [])]
+
+
+def _institution_users(entity_row: Dict[str, Any]) -> List[str]:
+    inst_id = entity_row.get("institution_id")
+    return _profile_ids(institution_id=inst_id) if inst_id else []
+
+
+def _responsible_users(entity_type: str, entity_row: Dict[str, Any]) -> List[str]:
+    """Who owns the item day to day: the first recipients of reminders and of escalation level 1."""
+    region_id = entity_row.get("region_id")
+    if entity_type == "application_stage":
+        if entity_row.get("current_stage") == "institution_response":
+            return _institution_users(entity_row)
+        if entity_row.get("assigned_to"):
+            return [entity_row["assigned_to"]]
+        if region_id:
+            p = _supabase.table("profiles").select("user_id") \
+                .eq("region_id", region_id).in_("role", ["scrutiny_officer", "regional_officer"]).execute()
+            return [u["user_id"] for u in (p.data or [])]
+        return []
+    if entity_type in ("evc_scheduling", "evc_completion"):
+        targets = [str(m) for m in (entity_row.get("committee_members") or [])] if entity_type == "evc_completion" else []
+        if region_id:
+            targets += _profile_ids(region_id=region_id, role="regional_officer")
+        return targets
+    if entity_type in ("undertaking", "document"):
+        return _institution_users(entity_row)
+    return []
 
 
 def resolve_targets(
     entity_type: str,
     entity_row: Dict[str, Any],
     kind: str,
-    level: int
+    level: int,
+    notify_role: Optional[str] = None
 ) -> List[str]:
     """Identify user_ids that should receive notification for this alert."""
-    target_user_ids = []
+    target_user_ids: List[str] = []
     try:
         region_id = entity_row.get("region_id")
-
-        if entity_type == "application_stage":
-            assigned_to = entity_row.get("assigned_to")
-            current_stage = entity_row.get("current_stage")
-
-            if kind in ("upcoming", "overdue"):
-                if current_stage == "institution_response":
-                    inst_id = entity_row.get("institution_id")
-                    if inst_id:
-                        p = _supabase.table("profiles").select("user_id").eq("institution_id", inst_id).execute()
-                        target_user_ids.extend([u["user_id"] for u in p.data])
-                elif assigned_to:
-                    target_user_ids.append(assigned_to)
-                elif region_id:
-                    # Notify scrutiny or regional officers in region
-                    p = _supabase.table("profiles").select("user_id") \
-                        .eq("region_id", region_id).in_("role", ["scrutiny_officer", "regional_officer"]).execute()
-                    target_user_ids.extend([u["user_id"] for u in p.data])
-
-            elif kind == "escalation":
-                if level == 1:
-                    if assigned_to:
-                        target_user_ids.append(assigned_to)
-                    elif region_id:
-                        p = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", "scrutiny_officer").execute()
-                        target_user_ids.extend([u["user_id"] for u in p.data])
-                elif level == 2:
-                    if region_id:
-                        p = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", "regional_officer").execute()
-                        target_user_ids.extend([u["user_id"] for u in p.data])
-                elif level == 3:
-                    p = _supabase.table("profiles").select("user_id").eq("role", "bureau_officer").execute()
-                    target_user_ids.extend([u["user_id"] for u in p.data])
-
-        elif entity_type in ("evc_scheduling", "evc_completion"):
-            if region_id:
-                p = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", "regional_officer").execute()
-                target_user_ids.extend([u["user_id"] for u in p.data])
-            # If committee assigned
-            committee = entity_row.get("committee_members") or []
-            target_user_ids.extend([str(m) for m in committee])
-
-        elif entity_type == "undertaking":
-            inst_id = entity_row.get("institution_id")
-            if inst_id:
-                p = _supabase.table("profiles").select("user_id").eq("institution_id", inst_id).execute()
-                target_user_ids.extend([u["user_id"] for u in p.data])
-            if kind in ("overdue", "escalation"):
-                if region_id:
-                    p = _supabase.table("profiles").select("user_id").eq("region_id", region_id).eq("role", "regional_officer").execute()
-                    target_user_ids.extend([u["user_id"] for u in p.data])
-
-        elif entity_type == "document":
-            inst_id = entity_row.get("institution_id")
-            if inst_id:
-                p = _supabase.table("profiles").select("user_id").eq("institution_id", inst_id).execute()
-                target_user_ids.extend([u["user_id"] for u in p.data])
-
+        if kind != "escalation":
+            target_user_ids = _responsible_users(entity_type, entity_row)
+            # Late undertakings concern the regional office as well as the institution
+            if kind == "overdue" and entity_type == "undertaking" and region_id:
+                target_user_ids += _profile_ids(region_id=region_id, role="regional_officer")
+        else:
+            role = notify_role or {1: "assigned_officer", 2: "regional_officer", 3: "bureau_officer"}.get(level, "bureau_officer")
+            if role == "assigned_officer":
+                target_user_ids = _responsible_users(entity_type, entity_row)
+            elif role == "bureau_officer":
+                target_user_ids = _profile_ids(role="bureau_officer")
+            elif region_id:
+                target_user_ids = _profile_ids(region_id=region_id, role=role)
     except Exception as e:
         logger.error(f"Error resolving targets for {entity_type} {kind}: {e}")
 
     return list(set(target_user_ids))
+
+
+def _reference_no(entity_type: str, entity_row: Dict[str, Any]) -> str:
+    """A reference safe to put in an email or SMS: the application number, or a short id."""
+    if entity_row.get("application_no"):
+        return entity_row["application_no"]
+    prefix = {"evc_visit": "EVC", "undertaking": "UND", "document": "DOC", "decision": "DEC"}.get(entity_type, "REF")
+    return f"{prefix}-{str(entity_row['id'])[:8].upper()}"
 
 
 def fire_alert(
@@ -170,26 +192,32 @@ def fire_alert(
     level: int,
     severity: str,
     message: str,
-    target_role: Optional[str] = None
+    target_role: Optional[str] = None,
+    channels: Optional[List[str]] = None,
+    due: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Insert an alert strictly once (unique constraint: entity_type, entity_id, kind, level).
+    Insert an alert strictly once (unique constraint: entity_type, entity_id, kind, level, cycle).
     Returns the created alert dict if newly inserted, or None if already exists.
     """
     entity_id = entity_row["id"]
+    use_cycle = _supports_alert_cycle()
+    cycle = _alert_cycle(entity_type, entity_row)
     try:
         # Check if already fired
-        existing = _supabase.table("alerts").select("id") \
+        q = _supabase.table("alerts").select("id") \
             .eq("entity_type", entity_type) \
             .eq("entity_id", entity_id) \
             .eq("kind", kind) \
-            .eq("level", level).execute()
+            .eq("level", level)
+        if use_cycle:
+            q = q.eq("cycle", cycle)
+        existing = q.execute()
 
         if existing.data and len(existing.data) > 0:
             return None
 
-        # Determine target user if single
-        targets = resolve_targets(entity_type, entity_row, kind, level)
+        targets = resolve_targets(entity_type, entity_row, kind, level, notify_role=target_role)
         target_uid = targets[0] if len(targets) == 1 else None
 
         now_iso = clock.now().isoformat()
@@ -205,6 +233,8 @@ def fire_alert(
             "target_user_id": target_uid,
             "fired_at": now_iso
         }
+        if use_cycle:
+            alert_payload["cycle"] = cycle
         res = _supabase.table("alerts").insert(alert_payload).execute()
         if not res.data:
             return None
@@ -218,7 +248,11 @@ def fire_alert(
                 title=title,
                 body=message,
                 alert_id=created_alert["id"],
-                severity=severity
+                severity=severity,
+                channels=channels,
+                kind=kind,
+                reference_no=_reference_no(entity_type, entity_row),
+                due_date=due.date().isoformat() if due else None,
             )
 
         return created_alert
@@ -226,6 +260,56 @@ def fire_alert(
         # Unique violation or database error
         logger.debug(f"fire_alert skipped/failed for {entity_type}/{entity_id}: {e}")
         return None
+
+
+def _check_deadline(
+    entity_type: str,
+    row: Dict[str, Any],
+    due: datetime,
+    sim_now: datetime,
+    offsets: List[int],
+    upcoming_kind: str,
+    label: str,
+    chain_scope: str,
+) -> Tuple[int, int]:
+    """
+    Fire the reminder for the smallest offset reached, or the overdue alert plus every
+    escalation level whose threshold has passed. Returns (alerts_created, escalations_created).
+    """
+    created = escalated = 0
+    days_left = (due - sim_now).total_seconds() / 86400.0
+
+    if days_left > 0:
+        reached = [o for o in offsets if days_left <= o]
+        if reached:
+            offset = min(reached)
+            if entity_type == "document":
+                sev = "info" if offset > 30 else "warning"
+            else:
+                sev = "info" if offset > 3 else "warning"
+            msg = f"{label} is due in {math.ceil(days_left)} day(s)."
+            if fire_alert(entity_type, row, upcoming_kind, offset, sev, msg, due=due):
+                created += 1
+        return created, escalated
+
+    days_overdue = -days_left
+    if fire_alert(entity_type, row, "overdue", 0, "warning", f"{label} is OVERDUE by {int(days_overdue)} day(s).", due=due):
+        created += 1
+
+    chain = get_escalation_chain(chain_scope, region_id=row.get("region_id"))
+    for lvl_def in chain.get("levels") or []:
+        lvl_num = lvl_def.get("level", 1)
+        notify_role = lvl_def.get("notify_role", "assigned_officer")
+        if days_overdue >= lvl_def.get("after_days_overdue", 0):
+            esc_msg = (
+                f"[ESCALATION LEVEL {lvl_num}] {label} is overdue by {int(days_overdue)} days. "
+                f"Escalated to {notify_role}."
+            )
+            if fire_alert(entity_type, row, "escalation", lvl_num, "critical", esc_msg, target_role=notify_role,
+                          channels=lvl_def.get("channels"), due=due):
+                created += 1
+                escalated += 1
+    return created, escalated
 
 
 def run_once() -> Dict[str, Any]:
@@ -245,166 +329,90 @@ def run_once() -> Dict[str, Any]:
     escalations_created = 0
     errors = []
 
+    def tally(result: Tuple[int, int]) -> None:
+        nonlocal alerts_created, escalations_created
+        alerts_created += result[0]
+        escalations_created += result[1]
+
     try:
         # ---------------------------------------------------------
         # 1. APPLICATION STAGE MONITORING
+        # Returned applications are monitored too: the institution's response has its own SLA.
         # ---------------------------------------------------------
+        stage_rules = _load_rules("stage")
         apps_res = _supabase.table("applications").select("*") \
-            .eq("status", "in_progress").not_.is_("due_at", "null").execute()
-        apps = apps_res.data or []
-
-        for app in apps:
+            .in_("status", ["in_progress", "returned"]).not_.is_("due_at", "null").execute()
+        for app in apps_res.data or []:
             due_at = _parse_dt(app.get("due_at"))
             if not due_at:
                 continue
-
-            app_no = app.get("application_no", "Application")
             stage = app.get("current_stage", "scrutiny")
-            rule = get_sla_rule("stage", stage_key=stage, region_id=app.get("region_id"))
-            offsets = rule.get("reminder_offsets_days") or [7, 3, 1]
-
-            days_left = (due_at - sim_now).total_seconds() / 86400.0
-
-            if days_left > 0:
-                # Upcoming deadline check
-                reached = [o for o in offsets if days_left <= o]
-                if reached:
-                    target_offset = min(reached)
-                    sev = "info" if target_offset > 3 else "warning"
-                    msg = f"{app_no} in stage '{stage}' is due in {int(days_left) + 1} day(s)."
-                    created = fire_alert(
-                        entity_type="application_stage",
-                        entity_row=app,
-                        kind="upcoming",
-                        level=target_offset,
-                        severity=sev,
-                        message=msg,
-                        target_role=app.get("current_stage_owner_role")
-                    )
-                    if created:
-                        alerts_created += 1
-            else:
-                # Overdue & Escalation
-                days_overdue = -days_left
-                # Level 0 Overdue alert
-                msg = f"{app_no} in stage '{stage}' is OVERDUE by {int(days_overdue)} day(s)!"
-                created_overdue = fire_alert(
-                    entity_type="application_stage",
-                    entity_row=app,
-                    kind="overdue",
-                    level=0,
-                    severity="warning",
-                    message=msg,
-                    target_role=app.get("current_stage_owner_role")
-                )
-                if created_overdue:
-                    alerts_created += 1
-
-                # Escalation levels
-                chain = get_escalation_chain("application_stage", region_id=app.get("region_id"))
-                levels = chain.get("levels") or []
-                for lvl_def in levels:
-                    lvl_num = lvl_def.get("level", 1)
-                    after_days = lvl_def.get("after_days_overdue", 0)
-                    notify_role = lvl_def.get("notify_role", "officer")
-
-                    if days_overdue >= after_days:
-                        esc_msg = (
-                            f"[ESCALATION LEVEL {lvl_num}] {app_no} in stage '{stage}' "
-                            f"is overdue by {int(days_overdue)} days. Escalated to {notify_role}."
-                        )
-                        created_esc = fire_alert(
-                            entity_type="application_stage",
-                            entity_row=app,
-                            kind="escalation",
-                            level=lvl_num,
-                            severity="critical",
-                            message=esc_msg,
-                            target_role=notify_role
-                        )
-                        if created_esc:
-                            alerts_created += 1
-                            escalations_created += 1
+            rule = get_sla_rule("stage", stage_key=stage, region_id=app.get("region_id"), rules=stage_rules)
+            label = f"{app.get('application_no', 'Application')} in stage '{stage}'"
+            tally(_check_deadline("application_stage", app, due_at, sim_now,
+                                  rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming", label, "application_stage"))
 
         # ---------------------------------------------------------
         # 2. EVC SCHEDULING & COMPLETION
         # ---------------------------------------------------------
-        evcs_res = _supabase.table("evc_visits").select("*, applications(region_id, application_no)").execute()
-        evcs = evcs_res.data or []
-
-        for evc in evcs:
+        sched_rules = _load_rules("evc_scheduling")
+        compl_rules = _load_rules("evc_completion")
+        evcs_res = _supabase.table("evc_visits").select("*, applications(region_id, application_no, institution_id)") \
+            .in_("status", ["queued", "scheduled", "overdue"]).execute()
+        for evc in evcs_res.data or []:
             app_meta = evc.get("applications") or {}
             evc["region_id"] = app_meta.get("region_id")
-            app_label = app_meta.get("application_no", "EVC Case")
+            evc["institution_id"] = app_meta.get("institution_id")
+            app_label = app_meta.get("application_no", "EVC case")
 
-            # EVC Scheduling
-            if evc.get("status") == "queued" and evc.get("scheduling_due_at"):
-                due = _parse_dt(evc["scheduling_due_at"])
+            if evc.get("status") == "queued":
+                due = _parse_dt(evc.get("scheduling_due_at"))
                 if due:
-                    left = (due - sim_now).total_seconds() / 86400.0
-                    if left > 0:
-                        if left <= 10:
-                            created = fire_alert("evc_scheduling", evc, "upcoming", int(left) or 1, "info",
-                                                 f"EVC Visit for {app_label} must be scheduled within {int(left)+1} days.")
-                            if created: alerts_created += 1
-                    else:
-                        created = fire_alert("evc_scheduling", evc, "overdue", 0, "warning",
-                                             f"EVC scheduling for {app_label} is OVERDUE!")
-                        if created: alerts_created += 1
-
-            # EVC Completion
-            if evc.get("status") in ("queued", "scheduled") and evc.get("completion_due_at"):
-                due = _parse_dt(evc["completion_due_at"])
+                    rule = get_sla_rule("evc_scheduling", region_id=evc["region_id"], rules=sched_rules)
+                    tally(_check_deadline("evc_scheduling", evc, due, sim_now,
+                                          rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
+                                          f"EVC scheduling for {app_label}", "evc_scheduling"))
+            else:
+                due = _parse_dt(evc.get("completion_due_at"))
                 if due:
-                    left = (due - sim_now).total_seconds() / 86400.0
-                    if left <= 0:
-                        created = fire_alert("evc_completion", evc, "overdue", 0, "warning",
-                                             f"EVC visit/report for {app_label} is OVERDUE.")
-                        if created: alerts_created += 1
+                    rule = get_sla_rule("evc_completion", region_id=evc["region_id"], rules=compl_rules)
+                    tally(_check_deadline("evc_completion", evc, due, sim_now,
+                                          rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
+                                          f"EVC visit and report for {app_label}", "evc_completion"))
 
         # ---------------------------------------------------------
         # 3. UNDERTAKINGS
         # ---------------------------------------------------------
-        uts_res = _supabase.table("undertakings").select("*, institutions(region_id, name)").in_("status", ["pending", "rejected"]).execute()
-        for ut in (uts_res.data or []):
+        ut_rules = _load_rules("undertaking")
+        uts_res = _supabase.table("undertakings").select("*, institutions(region_id, name)") \
+            .in_("status", ["pending", "rejected", "overdue"]).execute()
+        for ut in uts_res.data or []:
             inst_meta = ut.get("institutions") or {}
             ut["region_id"] = inst_meta.get("region_id")
             due = _parse_dt(ut.get("due_at"))
             if due:
-                left = (due - sim_now).total_seconds() / 86400.0
-                if left > 0:
-                    if left <= 5:
-                        created = fire_alert("undertaking", ut, "upcoming", int(left) or 1, "warning",
-                                             f"Undertaking '{ut['title']}' for {inst_meta.get('name', 'College')} due in {int(left)+1} days.")
-                        if created: alerts_created += 1
-                else:
-                    created = fire_alert("undertaking", ut, "overdue", 0, "critical",
-                                         f"Undertaking '{ut['title']}' is OVERDUE!")
-                    if created: alerts_created += 1
+                rule = get_sla_rule("undertaking", region_id=ut["region_id"], rules=ut_rules)
+                tally(_check_deadline("undertaking", ut, due, sim_now,
+                                      rule.get("reminder_offsets_days") or [7, 3, 1], "upcoming",
+                                      f"Undertaking '{ut['title']}'", "undertaking"))
 
         # ---------------------------------------------------------
-        # 4. DOCUMENTS EXPIRY
+        # 4. DOCUMENTS EXPIRY (superseded documents are no longer monitored)
         # ---------------------------------------------------------
-        docs_res = _supabase.table("documents").select("*, institutions(region_id, name)").not_.is_("valid_until", "null").execute()
-        for doc in (docs_res.data or []):
+        doc_rules = _load_rules("document_expiry")
+        docs_res = _supabase.table("documents").select("*, institutions(region_id, name)") \
+            .not_.is_("valid_until", "null").neq("status", "renewed").execute()
+        for doc in docs_res.data or []:
             inst_meta = doc.get("institutions") or {}
             doc["region_id"] = inst_meta.get("region_id")
+            # A date-only validity runs to the end of that day
             valid_until = _parse_dt(doc.get("valid_until"))
             if valid_until:
-                left = (valid_until - sim_now).total_seconds() / 86400.0
-                if left > 0:
-                    doc_offsets = [90, 60, 30, 7]
-                    reached = [o for o in doc_offsets if left <= o]
-                    if reached:
-                        min_offset = min(reached)
-                        created = fire_alert("document", doc, "expiry", min_offset,
-                                             "info" if min_offset > 30 else "warning",
-                                             f"Document '{doc['doc_type']}' expires in {int(left)+1} days.")
-                        if created: alerts_created += 1
-                else:
-                    created = fire_alert("document", doc, "overdue", 0, "critical",
-                                         f"Document '{doc['doc_type']}' for {inst_meta.get('name', 'College')} has EXPIRED.")
-                    if created: alerts_created += 1
+                valid_until += timedelta(days=1)
+                rule = get_sla_rule("document_expiry", region_id=doc["region_id"], rules=doc_rules)
+                tally(_check_deadline("document", doc, valid_until, sim_now,
+                                      rule.get("reminder_offsets_days") or [90, 60, 30, 7], "expiry",
+                                      f"Document '{doc['doc_type']}' ({doc.get('title', '')})", "document"))
 
         # ---------------------------------------------------------
         # 5. AUTO-RESOLVE CLEARED ALERTS
@@ -414,7 +422,9 @@ def run_once() -> Dict[str, Any]:
         # ---------------------------------------------------------
         # 6. RE-ESCALATE UNACKNOWLEDGED CRITICAL ALERTS (§5.4, §10)
         # ---------------------------------------------------------
-        reescalate_unacknowledged(sim_now)
+        reescalated = reescalate_unacknowledged(sim_now)
+        alerts_created += reescalated
+        escalations_created += reescalated
 
         # ---------------------------------------------------------
         # 7. RECOMPUTE COMPLIANCE HEALTH SCORES (§10.2)
@@ -426,19 +436,16 @@ def run_once() -> Dict[str, Any]:
             logger.warning(f"Health score recompute warning: {he}")
 
         # ---------------------------------------------------------
-        # 8. POST-DECISION ASSURANCE RECHECK (§15.2)
+        # 8. POST-DECISION ASSURANCE RECHECK (§15.2), once per simulated day
         # ---------------------------------------------------------
-        try:
-            import asyncio
-            from services.assurance import assurance_service
-            # Run async recheck in synchronous scheduler context
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(assurance_service.run_daily_post_decision_recheck())
-            else:
-                loop.run_until_complete(assurance_service.run_daily_post_decision_recheck())
-        except Exception as ae:
-            logger.warning(f"Assurance recheck warning: {ae}")
+        global _last_recheck_day
+        if _last_recheck_day != sim_now.date():
+            try:
+                from services.assurance import assurance_service
+                _run_coroutine(assurance_service.run_daily_post_decision_recheck())
+                _last_recheck_day = sim_now.date()
+            except Exception as ae:
+                logger.warning(f"Assurance recheck warning: {ae}")
 
     except Exception as e:
         logger.exception(f"Scheduler execution error: {e}")
@@ -447,7 +454,7 @@ def run_once() -> Dict[str, Any]:
     finished_at = datetime.now(timezone.utc)
 
     # ---------------------------------------------------------
-    # 6. RECORD SCHEDULER RUN
+    # RECORD SCHEDULER RUN
     # ---------------------------------------------------------
     run_record = {
         "started_at": started_at.isoformat(),
@@ -467,92 +474,148 @@ def run_once() -> Dict[str, Any]:
     return run_record
 
 
+_last_recheck_day = None
+
+
+def _run_coroutine(coro):
+    """Run a coroutine to completion from sync code, whether or not an event loop is running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # Called from inside an async endpoint: run on a separate thread with its own loop
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _resolve(alert_ids: List[str], now_iso: str) -> None:
+    for i in range(0, len(alert_ids), 100):
+        _supabase.table("alerts").update({"status": "resolved", "resolved_at": now_iso}) \
+            .in_("id", alert_ids[i:i + 100]).execute()
+
+
 def resolve_cleared_alerts(sim_now: datetime) -> None:
-    """Auto-resolve open alerts when conditions are cleared."""
+    """
+    Auto-resolve open alerts whose cause has cleared: the application left the stage the alert
+    was raised for, the EVC was scheduled or completed, the undertaking was verified, or the
+    document was superseded by a verified renewal.
+    """
     now_iso = sim_now.isoformat()
     try:
-        # 1. Closed or approved applications -> resolve open alerts
-        closed_apps = _supabase.table("applications").select("id").in_("status", ["approved", "rejected", "closed"]).execute()
-        closed_ids = [a["id"] for a in (closed_apps.data or [])]
-        if closed_ids:
-            _supabase.table("alerts").update({"status": "resolved", "resolved_at": now_iso}) \
-                .eq("entity_type", "application_stage") \
-                .eq("status", "open") \
-                .in_("entity_id", closed_ids).execute()
+        open_alerts = _supabase.table("alerts").select("id, entity_type, entity_id, fired_at") \
+            .in_("status", ["open", "acknowledged"]).execute().data or []
+        by_type: Dict[str, List[Dict[str, Any]]] = {}
+        for a in open_alerts:
+            by_type.setdefault(a["entity_type"], []).append(a)
 
-        # 2. Verified undertakings
-        ver_uts = _supabase.table("undertakings").select("id").eq("status", "verified").execute()
-        ver_ids = [u["id"] for u in (ver_uts.data or [])]
-        if ver_ids:
-            _supabase.table("alerts").update({"status": "resolved", "resolved_at": now_iso}) \
-                .eq("entity_type", "undertaking") \
-                .eq("status", "open") \
-                .in_("entity_id", ver_ids).execute()
+        def rows(table: str, ids: List[str], fields: str) -> Dict[str, Dict[str, Any]]:
+            out: Dict[str, Dict[str, Any]] = {}
+            for i in range(0, len(ids), 100):
+                res = _supabase.table(table).select(fields).in_("id", ids[i:i + 100]).execute()
+                out.update({r["id"]: r for r in (res.data or [])})
+            return out
 
-        # 3. Renewed / verified documents
-        ver_docs = _supabase.table("documents").select("id").in_("status", ["verified", "renewed"]).execute()
-        vdoc_ids = [d["id"] for d in (ver_docs.data or [])]
-        if vdoc_ids:
-            _supabase.table("alerts").update({"status": "resolved", "resolved_at": now_iso}) \
-                .eq("entity_type", "document") \
-                .eq("status", "open") \
-                .in_("entity_id", vdoc_ids).execute()
+        to_resolve: List[str] = []
+
+        app_alerts = by_type.get("application_stage", [])
+        apps = rows("applications", list({a["entity_id"] for a in app_alerts}), "id, status, stage_entered_at")
+        for a in app_alerts:
+            app = apps.get(a["entity_id"])
+            if not app or app["status"] not in ("in_progress", "returned"):
+                to_resolve.append(a["id"])
+                continue
+            fired, entered = _parse_dt(a.get("fired_at")), _parse_dt(app.get("stage_entered_at"))
+            if fired and entered and fired < entered:
+                to_resolve.append(a["id"])  # raised for a stage the application has since left
+
+        evc_alerts = by_type.get("evc_scheduling", []) + by_type.get("evc_completion", [])
+        evcs = rows("evc_visits", list({a["entity_id"] for a in evc_alerts}), "id, status")
+        for a in evc_alerts:
+            status = (evcs.get(a["entity_id"]) or {}).get("status")
+            if a["entity_type"] == "evc_scheduling" and status != "queued":
+                to_resolve.append(a["id"])
+            elif a["entity_type"] == "evc_completion" and status in ("completed", "cancelled", None):
+                to_resolve.append(a["id"])
+
+        ut_alerts = by_type.get("undertaking", [])
+        uts = rows("undertakings", list({a["entity_id"] for a in ut_alerts}), "id, status")
+        for a in ut_alerts:
+            if (uts.get(a["entity_id"]) or {}).get("status") in ("verified", None):
+                to_resolve.append(a["id"])
+
+        doc_alerts = by_type.get("document", [])
+        docs = rows("documents", list({a["entity_id"] for a in doc_alerts}), "id, status")
+        for a in doc_alerts:
+            if (docs.get(a["entity_id"]) or {}).get("status") in ("renewed", None):
+                to_resolve.append(a["id"])
+
+        if to_resolve:
+            _resolve(to_resolve, now_iso)
 
     except Exception as e:
         logger.error(f"Error in resolve_cleared_alerts: {e}")
 
 
+def _load_entity(entity_type: str, entity_id: str) -> Optional[Dict[str, Any]]:
+    """Load the monitored row behind an alert, with region_id and institution_id filled in."""
+    if entity_type == "application_stage":
+        res = _supabase.table("applications").select("*").eq("id", entity_id).limit(1).execute()
+        return res.data[0] if res.data else None
+    if entity_type in ("evc_scheduling", "evc_completion"):
+        res = _supabase.table("evc_visits").select("*, applications(region_id, institution_id)").eq("id", entity_id).limit(1).execute()
+        if not res.data:
+            return None
+        row = res.data[0]
+        meta = row.get("applications") or {}
+        row["region_id"], row["institution_id"] = meta.get("region_id"), meta.get("institution_id")
+        return row
+    table = {"undertaking": "undertakings", "document": "documents"}.get(entity_type)
+    if not table:
+        return None
+    res = _supabase.table(table).select("*, institutions(region_id)").eq("id", entity_id).limit(1).execute()
+    if not res.data:
+        return None
+    row = res.data[0]
+    row["region_id"] = (row.get("institutions") or {}).get("region_id")
+    return row
+
+
 def reescalate_unacknowledged(sim_now: datetime) -> int:
     """
-    Re-escalate critical alerts that remain unacknowledged beyond ack_timeout_hours (§5.4, §10).
-    Default timeout: 48 hours. Fires higher level notification to higher authorities.
+    Escalation alerts left unacknowledged beyond ack_timeout_hours move to the next level of
+    the chain straight away instead of waiting for its days-overdue threshold (§5.4, §10).
     """
-    now_iso = sim_now.isoformat()
     reescalated_count = 0
     try:
-        # Fetch escalation chain default ack timeout
-        chain_res = _supabase.table("escalation_chains").select("ack_timeout_hours").limit(1).execute()
-        ack_timeout_hours = 48
-        if chain_res.data and chain_res.data[0].get("ack_timeout_hours"):
-            ack_timeout_hours = chain_res.data[0]["ack_timeout_hours"]
-
-        timeout_cutoff = (sim_now - timedelta(hours=ack_timeout_hours)).isoformat()
-
-        # Find open, unacknowledged critical alerts fired before cutoff that haven't been re-escalated
         stale_alerts = _supabase.table("alerts").select("*") \
-            .eq("severity", "critical") \
+            .eq("kind", "escalation") \
             .eq("status", "open") \
-            .is_("acknowledged_at", "null") \
-            .lt("fired_at", timeout_cutoff).execute()
+            .is_("acknowledged_at", "null").execute().data or []
 
-        for alert in (stale_alerts.data or []):
-            curr_level = alert.get("level", 1)
-            next_level = curr_level + 1
-            # Check if higher escalation alert already exists
-            existing = _supabase.table("alerts").select("id") \
-                .eq("entity_type", alert["entity_type"]) \
-                .eq("entity_id", alert["entity_id"]) \
-                .eq("kind", "re_escalation") \
-                .eq("level", next_level).execute()
+        for alert in stale_alerts:
+            row = _load_entity(alert["entity_type"], alert["entity_id"])
+            if not row:
+                continue
+            chain = get_escalation_chain(alert["entity_type"], region_id=row.get("region_id"))
+            fired_at = _parse_dt(alert.get("fired_at"))
+            timeout = timedelta(hours=chain.get("ack_timeout_hours") or 48)
+            if not fired_at or sim_now - fired_at < timeout:
+                continue
 
-            if not existing.data:
-                # Fire re-escalation alert
-                new_alert = {
-                    "entity_type": alert["entity_type"],
-                    "entity_id": alert["entity_id"],
-                    "kind": "re_escalation",
-                    "level": next_level,
-                    "severity": "critical",
-                    "title": f"URGENT RE-ESCALATION (L{next_level}): Unacknowledged breach on {alert['entity_type']} {alert['entity_id']}",
-                    "message": f"Previous Level {curr_level} alert was NOT acknowledged within {ack_timeout_hours} hours. Immediate senior intervention required.",
-                    "status": "open",
-                    "region_id": alert.get("region_id"),
-                    "fired_at": now_iso
-                }
-                res = _supabase.table("alerts").insert(new_alert).execute()
-                if res.data:
-                    reescalated_count += 1
-                    logger.warning(f"Re-escalated unacknowledged alert {alert['id']} to level {next_level}")
+            next_level = (alert.get("level") or 0) + 1
+            next_def = next((l for l in chain.get("levels") or [] if l.get("level") == next_level), None)
+            if not next_def:
+                continue  # already at the top of the chain
+
+            notify_role = next_def.get("notify_role", "bureau_officer")
+            msg = (
+                f"[RE-ESCALATION LEVEL {next_level}] Level {alert.get('level')} alert was not acknowledged within "
+                f"{chain.get('ack_timeout_hours') or 48} hours. Escalated to {notify_role}."
+            )
+            if fire_alert(alert["entity_type"], row, "escalation", next_level, "critical", msg, target_role=notify_role,
+                          channels=next_def.get("channels")):
+                reescalated_count += 1
+                logger.warning(f"Re-escalated unacknowledged alert {alert['id']} to level {next_level}")
     except Exception as e:
         logger.error(f"Error in reescalate_unacknowledged: {e}")
 

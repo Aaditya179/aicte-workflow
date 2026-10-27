@@ -30,16 +30,20 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ backgroundColor: '#FAF7F2', colorScheme: 'light' }}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased bg-[#FAF7F2]`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      <body
+        style={{ backgroundColor: '#FAF7F2', colorScheme: 'light' }}
+        className="min-h-full flex flex-col bg-[#FAF7F2] text-[#1C1917] selection:bg-[#FBF0E4] selection:text-[#C25E26] bg-grid-texture antialiased"
+      >
         <LanguageProvider>
-          <Suspense fallback={<div className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" />}>
+          <Suspense fallback={<div className="h-16 bg-[#FAF7F2] border-b border-[#E8E2D8]" />}>
             <Navbar />
           </Suspense>
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 bg-[#FAF7F2] bg-grid-texture">{children}</main>
           <HelpDrawer />
-          <footer className="py-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900">
+          <footer className="py-4 border-t border-[#E8E2D8] text-center text-xs text-stone-500 bg-[#FAF7F2]/90 backdrop-blur-xs">
             Advisory only — final decisions rest with the competent authority.
           </footer>
         </LanguageProvider>

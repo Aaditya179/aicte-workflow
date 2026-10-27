@@ -2,7 +2,7 @@
 Workflow Engine — the heart of SIH26262.
 
 Rules (from spec §5.3):
-- advance() requires actor.role == stage.owner_role OR actor.role == 'admin'.
+- advance() requires actor.role == stage.owner_role. The administrator never acts on cases (§15.0).
 - On advance: close current stage_history, open next, compute due_at, auto-assign
   (same region, fewest open cases), write audit entry, notify new owner.
 - If next stage has creates=evc_visit, insert evc_visits row.
@@ -23,7 +23,7 @@ from services import audit, notifier
 
 _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
-OFFICER_ROLES = {"scrutiny_officer", "regional_officer", "evc_member", "bureau_officer"}
+OFFICER_ROLES = {"scrutiny_officer", "regional_officer", "evc_member", "sac_shc_member", "bureau_officer"}
 FINAL_STAGES = {"final_decision"}
 
 
@@ -68,6 +68,20 @@ def _get_template_by_code(code: str) -> dict:
     return res.data[0]
 
 
+def _pick_rule(rules: list[dict], region_id: Optional[str], template_code: Optional[str]) -> Optional[dict]:
+    """
+    Most specific active rule wins: region + template, region only, template only, then the
+    national default. Rules for another region or another template never apply.
+    """
+    candidates = [
+        r for r in rules
+        if r.get("region_id") in (None, region_id) and r.get("template_code") in (None, template_code)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: (r.get("region_id") is not None, r.get("template_code") is not None))
+
+
 def _compute_due(stage_def: dict, template_code: str, region_id: Optional[str], entered_at: datetime) -> datetime:
     """
     SLA lookup priority: region-specific stage rule → template-wide stage rule → stage sla_days.
@@ -75,23 +89,8 @@ def _compute_due(stage_def: dict, template_code: str, region_id: Optional[str], 
     stage_key = stage_def.get("key", "")
     sla_days = stage_def.get("sla_days", 15)
 
-    q = _supabase.table("sla_rules").select("*").eq("scope", "stage").eq("stage_key", stage_key).eq("is_active", True)
-    sla_res = q.execute()
-
-    best_rule = None
-    if sla_res.data:
-        for rule in sla_res.data:
-            if rule.get("region_id") == region_id:
-                best_rule = rule
-                break
-        if not best_rule:
-            for rule in sla_res.data:
-                if rule.get("template_code") == template_code:
-                    best_rule = rule
-                    break
-        if not best_rule:
-            best_rule = sla_res.data[0]
-
+    sla_res = _supabase.table("sla_rules").select("*").eq("scope", "stage").eq("stage_key", stage_key).eq("is_active", True).execute()
+    best_rule = _pick_rule(sla_res.data or [], region_id, template_code)
     if best_rule:
         sla_days = best_rule["duration_days"]
 
@@ -147,19 +146,12 @@ def _open_stage_history(application_id: str, from_stage: Optional[str], to_stage
     }).execute()
 
 
-def _create_evc_visit(application_id: str, region_id: Optional[str], queued_at: datetime) -> None:
+def _create_evc_visit(application_id: str, region_id: Optional[str], template_code: Optional[str], queued_at: datetime) -> None:
     """Create the evc_visits row when a stage with creates=evc_visit is entered."""
     # Find EVC scheduling SLA
-    sla_q = _supabase.table("sla_rules").select("*").eq("scope", "evc_scheduling").eq("is_active", True)
-    sla_res = sla_q.execute()
-    sched_days = 30  # default
-    if sla_res.data:
-        for rule in sla_res.data:
-            if rule.get("region_id") == region_id:
-                sched_days = rule["duration_days"]
-                break
-        else:
-            sched_days = sla_res.data[0]["duration_days"]
+    sla_res = _supabase.table("sla_rules").select("*").eq("scope", "evc_scheduling").eq("is_active", True).execute()
+    rule = _pick_rule(sla_res.data or [], region_id, template_code)
+    sched_days = rule["duration_days"] if rule else 30
 
     scheduling_due_at = queued_at + timedelta(days=sched_days)
 
@@ -257,7 +249,7 @@ class WorkflowEngine:
         stage_def = {**stages[current_stage_key], "key": current_stage_key}
 
         owner_role = stage_def.get("owner_role", "")
-        if actor.role != "admin" and actor.role != owner_role:
+        if actor.role != owner_role:
             raise PermissionError(
                 f"Role '{actor.role}' cannot advance from stage '{current_stage_key}' (requires '{owner_role}')"
             )
@@ -298,7 +290,7 @@ class WorkflowEngine:
 
         # Create EVC visit if next stage calls for it
         if next_stage_def.get("creates") == "evc_visit":
-            _create_evc_visit(app_id, app.get("region_id"), now)
+            _create_evc_visit(app_id, app.get("region_id"), tmpl["code"], now)
 
         audit.record(
             actor=actor,
@@ -327,7 +319,7 @@ class WorkflowEngine:
         app = _fetch("applications", id=app_id)
         if not app:
             raise ValueError("Application not found")
-        if actor.role not in OFFICER_ROLES and actor.role != "admin":
+        if actor.role not in OFFICER_ROLES:
             raise PermissionError("Only officers can return applications for deficiency")
 
         tmpl = _get_template(app["template_id"])
@@ -388,12 +380,12 @@ class WorkflowEngine:
         return updated
 
     def revert(self, app_id: str, actor: AuthenticatedUser, target_stage: str, reason: str) -> dict:
-        """Revert to an earlier stage (regional_officer or bureau_officer or admin only)."""
+        """Revert to an earlier stage (regional_officer or bureau_officer only)."""
         if not reason or not reason.strip():
             raise ValueError("A reason is required for reverting an application")
 
-        if actor.role not in ("regional_officer", "bureau_officer", "admin"):
-            raise PermissionError("Only regional/bureau officers or admins can revert applications")
+        if actor.role not in ("regional_officer", "bureau_officer"):
+            raise PermissionError("Only regional or bureau officers can revert applications")
 
         app = _fetch("applications", id=app_id)
         if not app:
@@ -457,8 +449,8 @@ class WorkflowEngine:
 
     def reassign(self, app_id: str, actor: AuthenticatedUser, new_assignee_id: str, reason: str) -> dict:
         """Change the officer assigned to the current stage."""
-        if actor.role not in ("regional_officer", "bureau_officer", "admin"):
-            raise PermissionError("Only regional/bureau officers or admins can reassign applications")
+        if actor.role not in ("regional_officer", "bureau_officer"):
+            raise PermissionError("Only regional or bureau officers can reassign applications")
 
         app = _fetch("applications", id=app_id)
         if not app:

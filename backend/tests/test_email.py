@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from main import app
 from core import clock
 from core.config import settings
-from services.email import generate_signed_ack_url, verify_ack_signature, send_alert_email, send_daily_digest
+from services.email import generate_signed_ack_url, verify_ack_signature, send_email, notice_html, send_daily_digest
 from core.security import supabase_admin
 
 client = TestClient(app)
@@ -85,15 +85,9 @@ def test_ack_by_token_endpoint():
     assert data.get("ok") is True
     assert data["alert"]["id"] == alert_id
 
-def test_send_alert_email_mock():
-    # Test mock fallback email delivery
-    res = send_alert_email(
-        user_email="regional.officer@aicte.gov.in",
-        user_id="user-123",
-        alert_id="alert-456",
-        severity="critical",
-        title="Immediate Scrutiny Escalation",
-        message="Application breached maximum delay."
-    )
-    assert res.get("status") in ("sent", 200, 201)
-    assert "mock" in res.get("mode", "mock") or "id" in res
+def test_alert_email_mock_carries_only_safe_content():
+    # Alert emails carry the reference, alert type and signed link, escaped (§15.0)
+    html = notice_html("Escalation notice: APP-1", "Reference APP-1 <b>x</b>", "http://x/ack?a=1&b=2")
+    assert "&lt;b&gt;" in html and "a=1&amp;b=2" in html
+    res = send_email("regional.officer@aicte.gov.in", "Escalation notice: APP-1", html)
+    assert res.get("status") == "sent" and res.get("id")

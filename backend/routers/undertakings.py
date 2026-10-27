@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 from core.config import settings
-from core.security import AuthenticatedUser, require_role, get_current_user
+from core.security import AuthenticatedUser, require_role, get_current_user, require_case_access
 from core import clock
 from services import audit as audit_service
 from services import notifier
@@ -33,8 +33,8 @@ class UndertakingVerify(BaseModel):
 
 
 class UndertakingReject(BaseModel):
-    remarks: str
-    extension_days: int = 7
+    remarks: str = Field(..., min_length=1)
+    extension_days: int = Field(7, ge=1)
 
 
 @router.get("")
@@ -42,7 +42,7 @@ async def list_undertakings(
     status_filter: Optional[str] = Query(None, alias="status"),
     institution_id: Optional[str] = None,
     limit: int = Query(50, ge=1, le=100),
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_case_access)
 ):
     """
     List undertakings (Section 6, 7.1).
@@ -51,7 +51,7 @@ async def list_undertakings(
     - regional: institutions in their region
     - institution: only their own undertakings
     """
-    query = _supabase.table("undertakings").select("*, institutions(name, city, aicte_id, region_id), documents(title, storage_path)")
+    query = _supabase.table("undertakings").select("*, institutions!inner(name, city, aicte_id, region_id), documents(title, storage_path)")
 
     if status_filter:
         query = query.eq("status", status_filter)
@@ -64,21 +64,19 @@ async def list_undertakings(
     elif institution_id:
         query = query.eq("institution_id", institution_id)
 
+    # Regional staff see their region only; filtered in the query so the limit applies after scoping
+    if user.role in ("regional_officer", "scrutiny_officer", "evc_member") and user.region_id:
+        query = query.eq("institutions.region_id", user.region_id)
+
     query = query.order("due_at", desc=False).limit(limit)
     res = query.execute()
-    undertakings = res.data or []
-
-    # Region filter for regional officer
-    if user.role == "regional_officer" and user.region_id:
-        undertakings = [u for u in undertakings if u.get("institutions", {}).get("region_id") == user.region_id]
-
-    return undertakings
+    return res.data or []
 
 
 @router.post("")
 async def create_undertaking(
     req: UndertakingCreate,
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer"]))
 ):
     """Record a compliance undertaking with SLA due date (Section 6)."""
     now = clock.now()
@@ -127,7 +125,7 @@ async def create_undertaking(
 async def submit_undertaking_evidence(
     undertaking_id: str,
     req: UndertakingSubmit,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_case_access)
 ):
     """
     Institution submits evidence document for undertaking (Section 6).
@@ -141,6 +139,8 @@ async def submit_undertaking_evidence(
     # Check permission
     if user.role == "institution" and user.institution_id != ut.get("institution_id"):
         raise HTTPException(status_code=403, detail="Cannot submit evidence for other institutions")
+    if ut.get("status") not in ("pending", "rejected", "overdue"):
+        raise HTTPException(status_code=400, detail=f"Evidence cannot be submitted while the undertaking is '{ut.get('status')}'")
 
     # Register evidence in documents table
     doc_payload = {
@@ -193,7 +193,7 @@ async def submit_undertaking_evidence(
 async def verify_undertaking(
     undertaking_id: str,
     req: UndertakingVerify,
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer"]))
 ):
     """
     Verify and approve undertaking evidence (Section 6).
@@ -203,6 +203,8 @@ async def verify_undertaking(
     if not ut_res.data:
         raise HTTPException(status_code=404, detail="Undertaking not found")
     ut = ut_res.data[0]
+    if ut.get("status") != "submitted":
+        raise HTTPException(status_code=400, detail=f"Only submitted evidence can be verified (status is '{ut.get('status')}')")
 
     now_iso = clock.now().isoformat()
     update_payload = {
@@ -246,7 +248,7 @@ async def verify_undertaking(
 async def reject_undertaking(
     undertaking_id: str,
     req: UndertakingReject,
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer"]))
 ):
     """
     Reject undertaking evidence with remarks and reopen with short deadline (Section 6).
@@ -255,6 +257,11 @@ async def reject_undertaking(
     if not ut_res.data:
         raise HTTPException(status_code=404, detail="Undertaking not found")
     ut = ut_res.data[0]
+
+    if not req.remarks.strip():
+        raise HTTPException(status_code=400, detail="Remarks are required when rejecting evidence")
+    if ut.get("status") != "submitted":
+        raise HTTPException(status_code=400, detail=f"Only submitted evidence can be rejected (status is '{ut.get('status')}')")
 
     now = clock.now()
     new_due = now + timedelta(days=req.extension_days)
@@ -267,6 +274,12 @@ async def reject_undertaking(
 
     res = _supabase.table("undertakings").update(update_payload).eq("id", undertaking_id).execute()
     updated = res.data[0] if res.data else None
+
+    # The reopened undertaking runs against the new deadline; alerts for the old one are closed
+    _supabase.table("alerts").update({"status": "resolved", "resolved_at": now.isoformat()}) \
+        .eq("entity_type", "undertaking") \
+        .eq("entity_id", undertaking_id) \
+        .in_("status", ["open", "acknowledged"]).execute()
 
     audit_service.record(
         actor=user,

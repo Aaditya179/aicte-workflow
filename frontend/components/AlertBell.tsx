@@ -82,23 +82,23 @@ export default function AlertBell() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Alerts and Notifications"
-        className="relative p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+        className="relative p-2 rounded-full text-stone-600 hover:text-[#C25E26] hover:bg-[#FBF0E4] transition cursor-pointer"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-[#C25E26] text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden">
-          <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-[#FAF7F2] rounded-2xl shadow-xl border border-[#E8E2D8] z-50 overflow-hidden">
+          <div className="p-3.5 border-b border-[#E8E2D8] flex items-center justify-between bg-white">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm text-slate-800 dark:text-slate-100">Notifications</span>
+              <span className="font-bold text-sm text-[#1C1917]">Notifications</span>
               {unreadCount > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 font-medium">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#FBF0E4] text-[#C25E26] font-semibold border border-[#F0D5BE]">
                   {unreadCount} unread
                 </span>
               )}
@@ -106,40 +106,32 @@ export default function AlertBell() {
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                className="text-xs text-[#C25E26] hover:text-[#A84A19] font-semibold cursor-pointer"
               >
                 Mark all read
               </button>
             )}
           </div>
 
-          <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+          <div className="max-h-80 overflow-y-auto divide-y divide-[#E8E2D8]">
             {notifications.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">
+              <div className="p-6 text-center text-xs text-stone-400">
                 No notifications yet.
               </div>
             ) : (
               notifications.slice(0, 10).map((n) => (
                 <div
                   key={n.id}
-                  className={`p-3 text-xs transition flex gap-3 items-start ${
+                  className={`p-3.5 text-xs transition flex gap-3 items-start ${
                     n.status !== 'read'
-                      ? 'bg-blue-50/50 dark:bg-blue-950/20'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                      ? 'bg-white font-medium'
+                      : 'bg-[#FAF7F2]/60 hover:bg-white text-stone-600'
                   }`}
                 >
-                  <div className="mt-0.5">
-                    {n.title.includes('CRITICAL') ? (
-                      <span className="w-2 h-2 rounded-full bg-red-500 block" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-blue-500 block" />
-                    )}
-                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-800 dark:text-slate-200 truncate">{n.title}</p>
-                    {n.body && <p className="text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">{n.body}</p>}
-                    <span className="text-[10px] text-slate-400 mt-1 inline-flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
+                    <p className="font-bold text-[#1C1917] truncate">{n.title}</p>
+                    {n.body && <p className="text-stone-600 mt-0.5 line-clamp-2">{n.body}</p>}
+                    <span className="text-[10px] text-stone-400 mt-1 block">
                       {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
@@ -147,7 +139,7 @@ export default function AlertBell() {
                     <button
                       onClick={(e) => markAsRead(n.id, e)}
                       title="Mark as read"
-                      className="p-1 text-slate-400 hover:text-blue-600 rounded"
+                      className="p-1 rounded-full text-stone-400 hover:text-[#C25E26] hover:bg-[#FBF0E4] transition"
                     >
                       <Check className="w-3.5 h-3.5" />
                     </button>
@@ -157,13 +149,13 @@ export default function AlertBell() {
             )}
           </div>
 
-          <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-center">
+          <div className="p-2.5 border-t border-[#E8E2D8] text-center bg-white">
             <Link
               href="/alerts"
               onClick={() => setIsOpen(false)}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+              className="text-xs text-[#C25E26] hover:underline font-bold inline-flex items-center gap-1"
             >
-              View Full Alert Inbox
+              <span>View all statutory alerts</span>
               <ExternalLink className="w-3 h-3" />
             </Link>
           </div>

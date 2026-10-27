@@ -37,7 +37,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'institution@demo.sih',
     description: 'Track application SLA, health score, and submit undertaking responses.',
     icon: Building2,
-    badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200'
+    badgeColor: 'bg-[#FBF0E4] text-[#C25E26] border-[#F0D5BE]'
   },
   {
     role: 'scrutiny_officer',
@@ -46,7 +46,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'scrutiny@demo.sih',
     description: 'Examine institutional submissions, verify documentation, and note deficiencies.',
     icon: ShieldCheck,
-    badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200'
+    badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200'
   },
   {
     role: 'regional_officer',
@@ -55,7 +55,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'regional@demo.sih',
     description: 'Monitor pendency across Western region, balance cases, and schedule EVCs.',
     icon: MapPin,
-    badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200'
+    badgeColor: 'bg-stone-100 text-stone-800 border-stone-300'
   },
   {
     role: 'evc_member',
@@ -64,7 +64,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'evc@demo.sih',
     description: 'Review visit schedule, inspect infrastructure on-site, and upload EVC reports.',
     icon: ClipboardList,
-    badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200'
+    badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
   },
   {
     role: 'bureau_officer',
@@ -73,7 +73,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'bureau@demo.sih',
     description: 'National overview, review SAC/SHC escalations, and issue final approvals.',
     icon: Award,
-    badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200'
+    badgeColor: 'bg-rose-50 text-rose-800 border-rose-200'
   },
   {
     role: 'admin',
@@ -82,7 +82,7 @@ const DEMO_ROLES: DemoRole[] = [
     email: 'admin@demo.sih',
     description: 'Simulate time-travel, edit SLA thresholds, and verify cryptographic audit hashes.',
     icon: Settings,
-    badgeColor: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300'
+    badgeColor: 'bg-stone-100 text-stone-700 border-stone-300'
   }
 ];
 
@@ -142,24 +142,25 @@ export default function LoginPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex flex-col justify-between p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-[#FAF7F2] bg-grid-texture text-[#1C1917] selection:bg-[#FBF0E4] selection:text-[#C25E26] flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans">
       {/* Header Banner */}
-      <header className="max-w-6xl mx-auto w-full pt-4 pb-6 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+      <header className="max-w-6xl mx-auto w-full pt-4 pb-6 flex items-center justify-between border-b border-[#E8E2D8]">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-indigo-500/20">
-            A
+          <div className="w-10 h-10 rounded-full bg-white border border-[#E5DFD5] flex items-center justify-center text-[#C25E26] shadow-2xs font-extrabold text-base">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-              AICTE Workflow & SLA Monitoring
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              National Approval Process & Pendency Tracking System
+            <div className="flex items-center gap-1">
+              <span className="font-extrabold text-lg tracking-tight text-[#1C1917]">Approval</span>
+              <span className="font-extrabold text-lg tracking-tight text-[#C25E26]">Track</span>
+            </div>
+            <p className="text-[10px] tracking-widest uppercase font-semibold text-stone-500">
+              AICTE National Approval Process &amp; SLA Monitoring
             </p>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <div className="hidden sm:flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#FBF0E4] border border-[#F0D5BE] text-[#C25E26]">
+          <span className="w-2 h-2 rounded-full bg-[#C25E26] animate-pulse"></span>
           SIH26262 Prototype
         </div>
       </header>
@@ -168,16 +169,16 @@ export default function LoginPage() {
       <main className="max-w-6xl mx-auto w-full my-auto py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column: Direct Login Form */}
-          <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 shadow-xl border border-slate-200/80 dark:border-slate-800">
+          <div className="lg:col-span-5 bg-white rounded-2xl p-6 sm:p-8 shadow-xs border border-[#E8E2D8]">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Sign In</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Enter your official AICTE credentials or click a demo card on the right.
+              <h2 className="text-2xl font-bold font-serif text-[#1C1917]">Sign In</h2>
+              <p className="text-sm text-stone-500 mt-1">
+                Enter your official AICTE credentials or click any demo role on the right.
               </p>
             </div>
 
             {errorMessage && (
-              <div className="mb-5 p-3.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 flex items-start gap-3 text-rose-700 dark:text-rose-300 text-sm">
+              <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3 text-rose-700 text-sm">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -191,40 +192,40 @@ export default function LoginPage() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-3.5" />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@demo.sih"
                     required
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E8E2D8] bg-[#FAF7F2] text-[#1C1917] text-sm focus:outline-none focus:ring-2 focus:ring-[#C25E26] transition"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-3.5" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     required
-                    className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#E8E2D8] bg-[#FAF7F2] text-[#1C1917] text-sm focus:outline-none focus:ring-2 focus:ring-[#C25E26] transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    className="absolute right-3.5 top-3.5 text-stone-400 hover:text-stone-600 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -234,7 +235,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium text-sm transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                className="w-full mt-2 py-3 px-4 rounded-full bg-[#C25E26] hover:bg-[#A84A19] active:bg-[#8F3D13] text-white font-bold text-sm transition-all shadow-md shadow-[#C25E26]/20 flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
                 {loading && !activeSigningRole ? (
                   <>
@@ -250,24 +251,22 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 text-center">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Default password for all demo accounts: <code className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">password123</code>
+            <div className="mt-6 pt-5 border-t border-[#E8E2D8] text-center">
+              <span className="text-xs text-stone-500">
+                Default password for all demo accounts: <code className="font-mono font-bold text-[#C25E26]">password123</code>
               </span>
             </div>
           </div>
 
           {/* Right Column: Interactive Role Switcher Cards */}
           <div className="lg:col-span-7">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Demo Evaluation Accounts
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Click any role card to automatically sign in and experience their dedicated workflow views.
-                </p>
-              </div>
+            <div className="mb-4">
+              <h3 className="text-lg font-bold font-serif text-[#1C1917]">
+                Demo Evaluation Accounts
+              </h3>
+              <p className="text-xs text-stone-500">
+                Click any role card to automatically sign in and experience their dedicated workflow views.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -281,32 +280,32 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => handleDemoSelect(roleItem)}
                     disabled={loading}
-                    className="p-4 text-left rounded-xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition-all duration-150 group relative overflow-hidden cursor-pointer"
+                    className="p-4 text-left rounded-2xl bg-white border border-[#E8E2D8] hover:border-[#C25E26] hover:shadow-xs transition-all duration-150 group relative overflow-hidden cursor-pointer"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-150">
+                      <div className="p-2.5 rounded-full bg-[#FAF7F2] border border-[#EAE4D9] text-[#C25E26] group-hover:bg-[#C25E26] group-hover:text-white transition-colors duration-150">
                         <Icon className="w-5 h-5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${roleItem.badgeColor}`}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${roleItem.badgeColor}`}>
                             {roleItem.roleLabel}
                           </span>
                         </div>
-                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        <h4 className="text-sm font-bold text-[#1C1917] truncate font-serif">
                           {roleItem.title}
                         </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 leading-relaxed">
+                        <p className="text-xs text-stone-500 line-clamp-2 mt-1 leading-relaxed">
                           {roleItem.description}
                         </p>
-                        <div className="mt-2 text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate">
+                        <div className="mt-2 text-[11px] font-mono text-stone-400 truncate">
                           {roleItem.email}
                         </div>
                       </div>
                     </div>
 
                     {isCurrentSigning && (
-                      <div className="absolute inset-0 bg-indigo-600/90 backdrop-blur-xs flex items-center justify-center text-white font-medium text-xs gap-2">
+                      <div className="absolute inset-0 bg-[#C25E26]/95 backdrop-blur-xs flex items-center justify-center text-white font-medium text-xs gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Signing in as {roleItem.roleLabel}...</span>
                       </div>
@@ -320,8 +319,8 @@ export default function LoginPage() {
       </main>
 
       {/* Advisory Footer */}
-      <footer className="max-w-6xl mx-auto w-full pt-6 pb-2 border-t border-slate-200 dark:border-slate-800 text-center">
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+      <footer className="max-w-6xl mx-auto w-full pt-6 pb-2 border-t border-[#E8E2D8] text-center">
+        <p className="text-xs text-stone-500">
           Advisory only, final decisions rest with the competent authority. • AICTE Automated Workflow Engine
         </p>
       </footer>

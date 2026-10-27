@@ -7,11 +7,14 @@ Never outputs SQL. All results passed through standard filtered endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import timedelta
+import re
 from supabase import create_client
 
 from core.config import settings
-from core.security import AuthenticatedUser, require_role
+from core.security import AuthenticatedUser, require_role, require_case_access
+from routers.applications import _get_scoped_app
 from services import llm as llm_service
 from services import risk as risk_service
 from services import health_score as health_service
@@ -45,89 +48,136 @@ class DeficiencyDraftRequest(BaseModel):
     deadline_days: int = 15
 
 
-@router.post("/query")
-async def natural_language_query(
-    req: NLQueryRequest,
-    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer", "admin"]))
-):
-    """
-    Parse a natural language query into an allow-listed JSON filter and execute it (§10.4).
-    Never produces or executes raw SQL.
-    """
-    q = req.query.lower().strip()
-    
-    # 1. Allow-listed Rule-based NL Parser (production safe & instant)
+STAGES = ["re_scrutiny", "institution_response", "evc_queue", "evc_visit", "sac_shc", "final_decision", "scrutiny"]
+ENTITY_STATUSES = {
+    "applications": {"draft", "in_progress", "returned", "approved", "rejected", "closed"},
+    "evc": {"queued", "scheduled", "completed", "overdue", "cancelled"},
+    "undertakings": {"pending", "submitted", "verified", "rejected", "overdue"},
+    "documents": {"active", "expiring", "expired", "renewed", "under_verification", "verified"},
+}
+
+
+def _rule_parse(q: str, regions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keyword parser used when no model is configured or the model call fails."""
     entity = "applications"
     if "evc" in q or "visit" in q or "inspection" in q:
         entity = "evc"
     elif "undertaking" in q or "compliance" in q:
         entity = "undertakings"
-    elif "document" in q or "affidavit" in q or "noc" in q:
+    elif "document" in q or "affidavit" in q or "noc" in q or "lease" in q:
         entity = "documents"
-
-    is_overdue = True if ("overdue" in q or "delayed" in q or "breach" in q or "late" in q) else None
-    
-    # Identify region if mentioned
     region = None
-    for r in ["north", "south", "east", "west", "central", "north-west"]:
-        if r in q:
-            region = r
+    for r in sorted(regions, key=lambda r: len(r["name"]), reverse=True):
+        name = r["name"].lower()
+        if name in q or name.replace("-", " ") in q or name.removesuffix("ern") in q:
+            region = r["name"]
             break
+    stage = next((s for s in STAGES if s.replace("_", " ") in q or s in q), None)
+    days = re.search(r"(?:more than|over|at least|>=?)\s*(\d+)\s*days?", q)
+    return {
+        "entity": entity,
+        "region": region,
+        "stage": stage,
+        "overdue": True if any(w in q for w in ("overdue", "delayed", "breach", "late")) or days else None,
+        "days_overdue_gte": int(days.group(1)) if days else None,
+    }
 
-    # Identify stage
-    stage = None
-    for s in ["scrutiny", "re_scrutiny", "evc_visit", "shc_sac", "approval", "council_decision"]:
-        if s.replace("_", " ") in q or s in q:
-            stage = s
-            break
 
-    validated_filter = NLQueryFilter(
-        entity=entity,
-        region=region,
-        stage=stage,
-        overdue=is_overdue
-    )
+def _parse_query(question: str, regions: List[Dict[str, Any]]) -> Tuple[NLQueryFilter, str]:
+    """
+    Model output is only ever a filter object, validated against the allow-list before use.
+    Anything outside it is dropped; the model never produces SQL.
+    """
+    raw = llm_service.nl_query_filter(question, [r["name"] for r in regions], STAGES)
+    parser = "llm"
+    if raw is None:
+        raw, parser = _rule_parse(question.lower().strip(), regions), "rules"
+    cleaned = {k: (v if v not in ("", 0, False) else None) for k, v in raw.items()}
+    if cleaned.get("entity") not in ENTITY_STATUSES:
+        cleaned["entity"] = "applications"
+    if cleaned.get("region") not in {r["name"] for r in regions}:
+        cleaned["region"] = None
+    if cleaned.get("stage") not in STAGES:
+        cleaned["stage"] = None
+    if cleaned.get("status") not in ENTITY_STATUSES[cleaned["entity"]]:
+        cleaned["status"] = None
+    if cleaned.get("days_overdue_gte"):
+        cleaned["overdue"] = True
+    return NLQueryFilter(**cleaned), parser
 
-    # 2. Execute query against allowable endpoints/tables
+
+def _run_filter(f: NLQueryFilter, region_id: Optional[str]) -> List[Dict[str, Any]]:
+    """Run a validated filter through the same scoped table queries as the list endpoints."""
     sim_now = clock.now()
-    results = []
+    cutoff = sim_now - timedelta(days=f.days_overdue_gte or 0)
+    name = f.institution_name
 
-    if entity == "applications":
-        query = _supabase.table("applications").select("*, institutions(name, region_id)")
-        if user.role == "regional_officer" and user.region_id:
-            query = query.eq("region_id", user.region_id)
-        if stage:
-            query = query.eq("current_stage", stage)
-        if is_overdue:
-            query = query.lt("due_at", sim_now.isoformat()).eq("status", "in_progress")
-        
-        db_res = query.limit(25).execute()
-        results = db_res.data or []
+    if f.entity == "applications":
+        query = _supabase.table("applications").select("*, institutions!inner(name, region_id)")
+        if region_id:
+            query = query.eq("region_id", region_id)
+        if f.stage:
+            query = query.eq("current_stage", f.stage)
+        if f.status:
+            query = query.eq("status", f.status)
+        if f.overdue:
+            query = query.lt("due_at", cutoff.isoformat()).in_("status", ["in_progress", "returned"])
+        if name:
+            query = query.ilike("institutions.name", f"%{name}%")
+    elif f.entity == "evc":
+        query = _supabase.table("evc_visits").select("*, applications!inner(application_no, region_id, institutions!inner(name))")
+        if region_id:
+            query = query.eq("applications.region_id", region_id)
+        if f.status:
+            query = query.eq("status", f.status)
+        if f.overdue:
+            query = query.lt("scheduling_due_at", cutoff.isoformat()).eq("status", "queued")
+        if name:
+            query = query.ilike("applications.institutions.name", f"%{name}%")
+    elif f.entity == "undertakings":
+        query = _supabase.table("undertakings").select("*, institutions!inner(name, region_id)")
+        if region_id:
+            query = query.eq("institutions.region_id", region_id)
+        if f.status:
+            query = query.eq("status", f.status)
+        if f.overdue:
+            query = query.lt("due_at", cutoff.isoformat()).in_("status", ["pending", "rejected", "overdue"])
+        if name:
+            query = query.ilike("institutions.name", f"%{name}%")
+    else:
+        query = _supabase.table("documents").select("*, institutions!inner(name, region_id)")
+        if region_id:
+            query = query.eq("institutions.region_id", region_id)
+        if f.status:
+            query = query.eq("status", f.status)
+        if f.overdue:
+            query = query.lt("valid_until", cutoff.date().isoformat()).neq("status", "renewed")
+        if name:
+            query = query.ilike("institutions.name", f"%{name}%")
+    return query.limit(25).execute().data or []
 
-    elif entity == "evc":
-        query = _supabase.table("evc_visits").select("*, applications(application_number, institutions(name))")
-        if is_overdue:
-            query = query.lt("scheduling_due_at", sim_now.isoformat()).eq("status", "queued")
-        db_res = query.limit(25).execute()
-        results = db_res.data or []
 
-    elif entity == "undertakings":
-        query = _supabase.table("undertakings").select("*, institutions(name)")
-        if is_overdue:
-            query = query.lt("due_at", sim_now.isoformat()).in_("status", ["pending", "submitted"])
-        db_res = query.limit(25).execute()
-        results = db_res.data or []
+@router.post("/query")
+async def natural_language_query(
+    req: NLQueryRequest,
+    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer"]))
+):
+    """
+    Parse a natural language query into an allow-listed JSON filter and execute it (§10.4).
+    Never produces or executes raw SQL.
+    """
+    regions = _supabase.table("regions").select("id, name").execute().data or []
+    validated_filter, parser = _parse_query(req.query, regions)
 
-    elif entity == "documents":
-        query = _supabase.table("documents").select("*, institutions(name)")
-        if is_overdue:
-            query = query.lt("valid_until", sim_now.isoformat())
-        db_res = query.limit(25).execute()
-        results = db_res.data or []
+    region_id = next((r["id"] for r in regions if r["name"] == validated_filter.region), None)
+    if user.role in ("regional_officer", "scrutiny_officer") and user.region_id:
+        region_id = user.region_id  # officers below bureau never query outside their region
 
+    results = _run_filter(validated_filter, region_id)
     return {
         "query": req.query,
         "filter": validated_filter.model_dump(),
+        "parser": parser,
         "total_matches": len(results),
         "results": results,
         "advisory": "Advisory only, final decisions rest with the competent authority."
@@ -137,23 +187,24 @@ async def natural_language_query(
 @router.post("/case-summary")
 async def get_case_summary(
     req: CaseSummaryRequest,
-    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer"]))
 ):
     """
     Generate statutory case summary <= 150 words with open issues and next action (§10.3).
     """
+    _get_scoped_app(req.application_id, user)
     app_res = _supabase.table("applications").select("*, institutions(name, health_score)").eq("id", req.application_id).limit(1).execute()
     if not app_res.data:
         raise HTTPException(status_code=404, detail="Application not found")
     app = app_res.data[0]
 
     # Gather context
-    hist_res = _supabase.table("stage_history").select("*").eq("application_id", req.application_id).order("seq").execute()
+    hist_res = _supabase.table("stage_history").select("*").eq("application_id", req.application_id).order("entered_at").execute()
     alerts_res = _supabase.table("alerts").select("*").eq("entity_id", req.application_id).eq("status", "open").execute()
-    uts_res = _supabase.table("undertakings").select("*").eq("institution_id", app["institution_id"]).in_("status", ["pending", "submitted"]).execute()
+    uts_res = _supabase.table("undertakings").select("*").eq("institution_id", app["institution_id"]).in_("status", ["pending", "submitted", "rejected", "overdue"]).execute()
 
     context = {
-        "application_number": app.get("application_number"),
+        "application_number": app.get("application_no"),
         "institution_name": (app.get("institutions") or {}).get("name", "Institution"),
         "current_stage": app.get("current_stage"),
         "status": app.get("status"),
@@ -168,18 +219,19 @@ async def get_case_summary(
 @router.post("/deficiency-draft")
 async def get_deficiency_draft(
     req: DeficiencyDraftRequest,
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "scrutiny_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["regional_officer", "scrutiny_officer"]))
 ):
     """
     Draft formal deficiency letter with response deadline (§10.3).
     """
+    _get_scoped_app(req.application_id, user)
     app_res = _supabase.table("applications").select("*, institutions(name)").eq("id", req.application_id).limit(1).execute()
     if not app_res.data:
         raise HTTPException(status_code=404, detail="Application not found")
     app = app_res.data[0]
 
     context = {
-        "application_number": app.get("application_number"),
+        "application_number": app.get("application_no"),
         "institution_name": (app.get("institutions") or {}).get("name", "College"),
         "deficiencies": req.deficiencies,
         "deadline_days": req.deadline_days
@@ -188,10 +240,20 @@ async def get_deficiency_draft(
     return llm_service.draft_deficiency_letter(context)
 
 
+class PolishRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+
+
+@router.post("/polish")
+async def polish_draft(req: PolishRequest, user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "bureau_officer"]))):
+    """Suggest better wording for a communication draft (§15.7). Nothing is sent."""
+    return llm_service.polish_text(req.text)
+
+
 @router.get("/risk/{application_id}")
 async def get_application_risk(
     application_id: str,
-    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "scrutiny_officer"]))
 ):
     """
     Get 0-100 delay-risk score and top 3 reasons (§10.1).
@@ -203,10 +265,12 @@ async def get_application_risk(
 @router.get("/health-score/{institution_id}")
 async def get_institution_health_score(
     institution_id: str,
-    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "institution", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "regional_officer", "institution"]))
 ):
     """
     Get 0-100 compliance health score and deduction breakdown (§10.2).
     """
+    if user.role == "institution" and user.institution_id != institution_id:
+        raise HTTPException(status_code=403, detail="Institutions can only view their own health score")
     sim_now = clock.now()
     return health_service.compute_institution_health_score(institution_id, sim_now)

@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
+import logging
 
 from core.config import settings
-from core.security import AuthenticatedUser, require_role, get_current_user
+from core.security import AuthenticatedUser, require_role, get_current_user, require_case_access
 from core import clock
 
+logger = logging.getLogger("aicte.dashboards")
 router = APIRouter(prefix="/dashboard", tags=["Dashboards"])
 _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
@@ -14,7 +16,7 @@ _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 @router.get("/bureau")
 async def get_bureau_dashboard(
     region_id: Optional[str] = Query(None),
-    user: AuthenticatedUser = Depends(require_role(["bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["bureau_officer"]))
 ):
     """
     National Bureau Dashboard (Section 7.2):
@@ -103,7 +105,7 @@ async def get_bureau_dashboard(
 
 @router.get("/regional")
 async def get_regional_dashboard(
-    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["regional_officer", "bureau_officer"]))
 ):
     """
     Regional Dashboard (Section 7.2):
@@ -145,15 +147,15 @@ async def get_regional_dashboard(
     # Workload Balancer (§10.5):
     # Analyze open cases per officer, find most loaded and least loaded, suggest moving oldest unstarted cases
     try:
-        officers_prof = _supabase.table("profiles").select("user_id, full_name, email, role") \
+        officers_prof = _supabase.table("profiles").select("user_id, full_name, role") \
             .eq("region_id", region_id) \
             .in_("role", ["regional_officer", "scrutiny_officer"]).execute()
         
         officer_stats = []
         for off in (officers_prof.data or []):
             u_id = off["user_id"]
-            open_c = _supabase.table("applications").select("id, due_at, stage_entered_at, application_number") \
-                .eq("current_owner_id", u_id) \
+            open_c = _supabase.table("applications").select("id, due_at, stage_entered_at, application_no") \
+                .eq("assigned_to", u_id) \
                 .eq("status", "in_progress") \
                 .order("stage_entered_at", desc=False).execute()
             
@@ -169,7 +171,7 @@ async def get_regional_dashboard(
             
             officer_stats.append({
                 "user_id": u_id,
-                "name": off.get("full_name") or off.get("email", "Officer").split("@")[0],
+                "name": off.get("full_name") or "Officer",
                 "role": off.get("role"),
                 "open_count": len(c_data),
                 "overdue_count": overdue_c,
@@ -190,7 +192,7 @@ async def get_regional_dashboard(
                     "to_officer": least_loaded["name"],
                     "to_officer_id": least_loaded["user_id"],
                     "case_id": most_loaded["oldest_case"]["id"],
-                    "case_number": most_loaded["oldest_case"]["application_number"],
+                    "case_number": most_loaded["oldest_case"]["application_no"],
                     "reason": f"High load disparity ({most_loaded['open_count']} vs {least_loaded['open_count']} open cases). Suggest reassigning oldest unstarted case.",
                     "advisory": "Advisory only, final decisions rest with the competent authority."
                 }
@@ -208,7 +210,7 @@ async def get_regional_dashboard(
 
 @router.get("/officer")
 async def get_officer_dashboard(
-    user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "evc_member", "bureau_officer", "admin"]))
+    user: AuthenticatedUser = Depends(require_role(["scrutiny_officer", "regional_officer", "evc_member", "bureau_officer"]))
 ):
     """
     Officer Dashboard (Section 7.2):
@@ -267,7 +269,7 @@ async def get_officer_dashboard(
 
 @router.get("/institution")
 async def get_institution_dashboard(
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_case_access)
 ):
     """
     Institution Dashboard (Section 7.2):
@@ -318,4 +320,33 @@ async def get_institution_dashboard(
         "applications": applications,
         "undertakings": undertakings,
         "documents": documents
+    }
+
+
+@router.get("/admin")
+async def get_admin_dashboard(user: AuthenticatedUser = Depends(require_role(["admin"]))):
+    """
+    Configuration and system health only. The administrator has no view of case data (§15.0),
+    so nothing here names an application, institution or officer decision.
+    """
+    def count(table: str, **eq) -> int:
+        q = _supabase.table(table).select("*", count="exact").limit(1)
+        for k, v in eq.items():
+            q = q.eq(k, v)
+        return q.execute().count or 0
+
+    roles: dict = {}
+    for p in _supabase.table("profiles").select("role").execute().data or []:
+        roles[p["role"]] = roles.get(p["role"], 0) + 1
+    runs = _supabase.table("scheduler_runs").select("started_at, finished_at, clock_now, alerts_created, escalations_created") \
+        .order("started_at", desc=True).limit(5).execute().data or []
+    return {
+        "users_by_role": roles,
+        "active_sla_rules": count("sla_rules", is_active=True),
+        "escalation_chains": count("escalation_chains"),
+        "workflow_templates": count("workflow_templates"),
+        "pending_rule_changes": _supabase.table("approval_requests").select("id", count="exact")
+            .eq("kind", "rule_change").eq("status", "pending").limit(1).execute().count or 0,
+        "recent_scheduler_runs": runs,
+        "simulated_now": clock.now().isoformat(),
     }

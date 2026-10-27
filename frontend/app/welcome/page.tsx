@@ -78,6 +78,7 @@ const FEATURES = [
       'The admin has no access to cases. Officers sign in with an authenticator app, and repeated failed sign-ins lock the account.',
       'Documents are opened through links that expire in 5 minutes. Every view and download is logged.',
       'AI summaries and drafts are labelled advisory and never decide anything.',
+      'A case copilot answers questions such as why a case is delayed from the case record alone, and drafts an escalation message the officer reviews before sending.',
     ],
   },
 ];

@@ -18,6 +18,8 @@ from routers.applications import _get_scoped_app
 from services import llm as llm_service
 from services import risk as risk_service
 from services import health_score as health_service
+from services import copilot as copilot_service, notifier
+from services import audit as audit_service
 from core import clock
 
 router = APIRouter(prefix="/ai", tags=["AI & Differentiators"])
@@ -274,3 +276,62 @@ async def get_institution_health_score(
         raise HTTPException(status_code=403, detail="Institutions can only view their own health score")
     sim_now = clock.now()
     return health_service.compute_institution_health_score(institution_id, sim_now)
+
+
+# ─── Case copilot ────────────────────────────────────────────────────────────
+
+COPILOT_ROLES = ["scrutiny_officer", "regional_officer", "bureau_officer", "evc_member", "sac_shc_member"]
+
+
+class CopilotTurn(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., max_length=4000)
+
+
+class CopilotRequest(BaseModel):
+    application_id: str
+    question: str = Field(..., min_length=1, max_length=1000)
+    history: List[CopilotTurn] = Field(default_factory=list, max_length=20)
+
+
+class EscalationDraftRequest(BaseModel):
+    application_id: str
+
+
+class EscalationSendRequest(BaseModel):
+    application_id: str
+    recipient_id: str
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=3000)
+
+
+@router.post("/copilot")
+async def case_copilot(req: CopilotRequest, user: AuthenticatedUser = Depends(require_role(COPILOT_ROLES))):
+    """Answer a question about one case from its record. Advisory; changes nothing."""
+    app = _get_scoped_app(req.application_id, user)
+    return copilot_service.answer(app, req.question.strip(), [t.model_dump() for t in req.history])
+
+
+@router.post("/copilot/escalation-draft")
+async def copilot_escalation_draft(req: EscalationDraftRequest,
+                                   user: AuthenticatedUser = Depends(require_role(COPILOT_ROLES))):
+    """Draft an escalation message to the next level up. Nothing is sent from here."""
+    app = _get_scoped_app(req.application_id, user)
+    return copilot_service.draft_escalation(app, user)
+
+
+@router.post("/copilot/escalation-send")
+async def copilot_escalation_send(req: EscalationSendRequest,
+                                  user: AuthenticatedUser = Depends(require_role(COPILOT_ROLES))):
+    """The officer sends the reviewed escalation as an in-app message to a senior officer. Audited."""
+    app = _get_scoped_app(req.application_id, user)
+    allowed = {r["user_id"]: r for r in copilot_service.escalation_recipients(app, user)}
+    if req.recipient_id not in allowed:
+        raise HTTPException(status_code=403, detail="That officer is not above you in this case's escalation chain")
+    notifier.notify_user(req.recipient_id, req.subject.strip(), req.body.strip())
+    audit_service.record(
+        actor=user, action="copilot.escalation_sent", entity_type="application", entity_id=app["id"],
+        before=None, after={"to": req.recipient_id, "subject": req.subject.strip()},
+        reason=f"Escalated to {allowed[req.recipient_id].get('full_name') or 'a senior officer'}",
+    )
+    return {"sent": True, "recipient": allowed[req.recipient_id].get("full_name")}

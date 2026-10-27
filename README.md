@@ -72,6 +72,7 @@ Every demo account uses the password `password123`, and the welcome and login pa
 
 **AI assistance (advisory only)**
 - Case summaries, deficiency letter drafts and wording polish for officers.
+- A case copilot on each application: ask "why is this case delayed?" and get an answer built only from the case record (stage history against time limits, returns, alerts, EVC, documents), with every number checked against it. It drafts an escalation message to the next level up, which the officer edits and sends in-app; sending is audited.
 - Natural-language questions over the caseload.
 - A daily brief on each dashboard: facts computed from live data, summarised by AI, with the summary dropped if it states a number the facts do not.
 - Reads uploaded leases and certificates (OCR): the expiry date for a person to confirm, plus the institution name, land area, survey number and start date as printed.

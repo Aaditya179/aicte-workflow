@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import AssurancePanel from '@/components/AssurancePanel';
 import CaseAssistantPanel from '@/components/CaseAssistantPanel';
+import CaseCopilot from '@/components/CaseCopilot';
 import { useMe, formatDate, formatDateTime } from '@/components/ui';
 import ApplicationFormCard, { typeLabel, type ApplicationForm } from '@/components/ApplicationFormCard';
 
@@ -286,6 +287,9 @@ function ApplicationDetailContent() {
 
           {/* AI Case Summary & Deficiency Notice Assistant (§10.3) */}
           <CaseAssistantPanel applicationId={app.id} role={me?.role} />
+
+          {/* Case copilot: questions about this case, escalation drafts */}
+          <CaseCopilot applicationId={app.id} role={me?.role} />
 
           {/* Stage History */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 shadow-2xs">

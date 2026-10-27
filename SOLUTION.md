@@ -304,6 +304,7 @@ Below 35 is labelled Low, 35 to 65 Medium, and above 65 High.
 
 | Feature | What it does | Guardrail |
 | :--- | :--- | :--- |
+| **Case copilot** | A chat on each application. It answers questions such as "why is this case delayed?" from a fact sheet built from the case record: stage history against each time limit, returns, alerts, the EVC visit, documents, open assurance flags and officer load. It says first whether the case is actually late, then names the causes, largest first. On request it drafts an escalation to the next level up (scrutiny or EVC → regional office → bureau), which the officer edits and sends as an in-app message | Any number not in the record replaces the answer with one built from the facts; the facts used are shown under each answer; text in remarks is treated as data; sending is the officer's action and is audited |
 | **Case summary** | Summarises the stage history, documents, alerts and undertakings in under 150 words, with open issues and the next action | Never states or implies a decision; no facts outside the input |
 | **Deficiency letter draft** | A formal letter listing each deficiency and the response deadline | Shown as a draft; the officer edits and sends |
 | **Polish** | Improves the wording of an officer's draft message | Never sends anything |
@@ -559,6 +560,7 @@ The pytest suite in `backend/tests` covers:
 - **Channels:** a row per channel, fallback on failure, webhook status updates.
 - **Security:** MFA required on officer routes, no case access for the administrator, region and institution isolation, maker-checker.
 - **Daily brief:** deadline facts, the number guard, endpoint access by role.
+- **Case copilot:** the late/not-late fact, the number guard, the escalation chain for recipients, and the audited send.
 
 Run with `RESEND_API_KEY=` so email is simulated. The suite writes to the Supabase project it is pointed at, so use a separate test project.
 

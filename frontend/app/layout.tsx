@@ -14,6 +14,7 @@ const geistMono = Geist_Mono({
 
 import { Suspense } from "react";
 import Navbar from "@/components/Navbar";
+import HelpDrawer from "@/components/HelpDrawer";
 import { LanguageProvider } from "@/context/LanguageContext";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
             <Navbar />
           </Suspense>
           <main className="flex-1">{children}</main>
+          <HelpDrawer />
           <footer className="py-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900">
             Advisory only — final decisions rest with the competent authority.
           </footer>

@@ -32,8 +32,8 @@ export default function Navbar() {
     router.push('/login');
   };
 
-  // Don't render full navbar on login page
-  if (pathname === '/login') return null;
+  // Don't render full navbar on login or welcome page
+  if (pathname === '/login' || pathname === '/welcome') return null;
 
   return (
     <>

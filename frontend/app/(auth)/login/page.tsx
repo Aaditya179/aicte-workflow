@@ -128,6 +128,19 @@ export default function LoginPage() {
     handleSignIn(role.email, 'password123', role.role);
   };
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const demoRole = params.get('demo');
+      if (demoRole) {
+        const found = DEMO_ROLES.find(r => r.role === demoRole);
+        if (found) {
+          handleDemoSelect(found);
+        }
+      }
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex flex-col justify-between p-4 sm:p-6 lg:p-8">
       {/* Header Banner */}

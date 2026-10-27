@@ -69,11 +69,11 @@ Every demo account uses the password `password123`, and the welcome and login pa
 **AI assistance (advisory only)**
 - Case summaries, deficiency letter drafts and wording polish for officers.
 - Natural-language questions over the caseload.
-- Reads expiry dates from uploaded leases and certificates (OCR), for a person to confirm.
+- Reads uploaded leases and certificates (OCR): the expiry date for a person to confirm, plus the institution name, land area, survey number and start date as printed.
 - Runs on Groq with a failover key, and falls back to a mock mode when no key is set.
 
 **Decision Assurance**
-- Checks a final decision before it is committed: missing documents, conflicting findings, unusual patterns. Each flag must be acknowledged or overridden with a reason.
+- Checks a final decision before it is committed: missing or expired documents, unusual patterns, and documents that disagree with each other. Land areas are compared across units (acres, hectares, sq m, sq ft, gunthas), and survey numbers and institution names across the ways they are written. Each flag must be acknowledged or overridden with a reason.
 - Re-checks committed decisions when a supporting document later expires.
 
 **Governance**
@@ -166,7 +166,7 @@ Password for every account: `password123`.
 
 **Seeded cases:**
 - **B:** in Scrutiny and due in 2 days, used by the walkthrough.
-- **G:** a final decision with four assurance flags.
+- **G:** a final decision with four kinds of assurance flag, including a lease and a land-use certificate that disagree on land area and survey number.
 - **H:** a committed decision whose lease expires in 10 days, so a +15 day jump raises a post-decision flag.
 - **I:** upload the sample lease and accept the suggested expiry date.
 - **J:** the scrutiny officer's next decision raises an anomaly flag.

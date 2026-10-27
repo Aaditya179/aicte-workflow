@@ -90,6 +90,7 @@ function DocumentContent() {
               <OcrSuggestion doc={doc} onChange={(d) => setDoc({ ...doc, ...d })} />
             </section>
           )}
+          <ExtractedFields doc={doc} />
           <section className={card} aria-labelledby="integrity-heading">
             <h2 id="integrity-heading" className="mb-3 text-sm font-bold text-stone-900">Integrity and storage</h2>
             <dl className="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
@@ -115,6 +116,37 @@ function DocumentContent() {
         <div>{log ? <AccessLog log={log} /> : null}</div>
       </div>
     </PageShell>
+  );
+}
+
+const EXTRACTED_FIELDS: { key: string; label: string; date?: boolean }[] = [
+  { key: 'institution_name', label: 'Institution or lessee' },
+  { key: 'land_area', label: 'Land area' },
+  { key: 'survey_number', label: 'Survey number' },
+  { key: 'start_date', label: 'Starts', date: true },
+];
+
+/** Fields read from the document, which Decision Assurance compares across the institution's documents */
+function ExtractedFields({ doc }: { doc: DocumentDetail }) {
+  const meta = doc.metadata || {};
+  const found = EXTRACTED_FIELDS.filter((f) => meta[f.key]);
+  if (found.length === 0) return null;
+  return (
+    <section className={card} aria-labelledby="fields-heading">
+      <h2 id="fields-heading" className="mb-3 text-sm font-bold text-stone-900">Read from the document</h2>
+      <dl className="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
+        {found.map((f) => (
+          <React.Fragment key={f.key}>
+            <dt className="text-stone-500">{f.label}</dt>
+            <dd className="text-stone-900">{f.date ? formatDate(meta[f.key]) : meta[f.key]}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+      <p className="mt-3 text-xs text-stone-500">
+        Read by an AI model, as printed. Decision Assurance compares these with the institution&apos;s other
+        documents and flags any that disagree.
+      </p>
+    </section>
   );
 }
 

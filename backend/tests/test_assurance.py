@@ -8,11 +8,16 @@ Tests:
 4. Overriding with a documented reason succeeds and updates audit log.
 5. Committing succeeds when all flags are acknowledged/overridden.
 6. Post-decision daily recheck flags newly expired evidence.
+
+The decision tables have foreign keys, so every row hangs off seeded case A (Western region,
+visible to the regional officer) and is removed afterwards.
 """
+import hashlib
+import uuid
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
-from datetime import datetime, timedelta
-import uuid
 
 from main import app
 from core.db import db
@@ -28,153 +33,129 @@ def regional_token():
     return get_token("regional@demo.sih")
 
 
-@pytest.mark.asyncio
-async def test_decision_assurance_pre_checks(regional_token):
-    """Test drafting a decision triggers pre-decision statutory checks."""
-    clock.reset()
-    # Find an open application
-    apps = db.table("applications").select("id, current_stage").eq("status", "in_progress").limit(1).execute().data
-    assert apps and len(apps) > 0
-    test_app = apps[0]
+@pytest.fixture(scope="module")
+def regional_id(regional_token):
+    return client.get("/api/v1/me", headers={"Authorization": f"Bearer {regional_token}"}).json()["user_id"]
 
+
+@pytest.fixture(scope="module")
+def case_a():
+    return db.table("applications").select("*").eq("application_no", "DEMO-CASE-A").limit(1).execute().data[0]
+
+
+@pytest.fixture
+def decisions(case_a):
+    """Creates decisions on case A and deletes them (cascading to reports and flags) afterwards."""
+    created = []
+
+    def make(status: str, stage_key: str = "test_stage", decided_by=None):
+        dec = db.insert("decisions", {
+            "application_id": case_a["id"], "stage_key": f"{stage_key}_{uuid.uuid4().hex[:6]}",
+            "outcome": "approve", "status": status, "decided_by": decided_by,
+            "decided_at": clock.now().isoformat(),
+        })
+        created.append(dec["id"])
+        rep = db.insert("assurance_reports", {
+            "decision_id": dec["id"], "kind": "pre", "generated_at": clock.now().isoformat(),
+            "checks": [{"check": "freshness", "result": "flagged", "detail": "Test flag"}], "passed": 0, "flagged": 1,
+        })
+        return dec, rep
+
+    yield make
+    for dec_id in created:
+        db.table("decisions").delete().eq("id", dec_id).execute()
+
+
+def _flag(dec, rep, status="open", check_type="freshness"):
+    return db.insert("assurance_flags", {
+        "report_id": rep["id"], "decision_id": dec["id"], "check_type": check_type,
+        "severity": "critical", "message": "Test flag", "status": status,
+    })
+
+
+@pytest.mark.asyncio
+async def test_decision_assurance_pre_checks(regional_token, case_a):
+    """Drafting a decision runs the pre-decision checks."""
+    clock.reset()
     headers = {"Authorization": f"Bearer {regional_token}"}
     res = client.post(
-        f"/api/v1/applications/{test_app['id']}/decisions",
+        f"/api/v1/applications/{case_a['id']}/decisions",
         headers=headers,
-        json={
-            "stage_key": test_app["current_stage"],
-            "outcome": "approve",
-            "remarks": "Assurance pre-check automated test"
-        }
+        json={"stage_key": case_a["current_stage"], "outcome": "approve", "remarks": "Assurance pre-check automated test"},
     )
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
-    assert "decision_id" in data
-    assert "checks" in data
-    assert "flags" in data
+    assert "decision_id" in data and "checks" in data and "flags" in data
     assert isinstance(data["checks"], list)
     assert len(data["checks"]) >= 4
+    db.table("decisions").delete().eq("id", data["decision_id"]).execute()
 
 
 @pytest.mark.asyncio
-async def test_commit_blocked_with_open_flag(regional_token):
+async def test_commit_blocked_with_open_flag(regional_token, regional_id, decisions):
     """A decision cannot be committed while any flag is open."""
-    # Create a draft decision with a known open flag
-    dec = db.insert("decisions", {
-        "application_id": str(uuid.uuid4()),
-        "stage_key": "final_decision",
-        "outcome": "approve",
-        "status": "draft"
-    })
-    dec_id = dec["id"]
-
-    rep = db.insert("assurance_reports", {
-        "decision_id": dec_id,
-        "kind": "pre",
-        "generated_at": clock.now().isoformat(),
-        "checks": [{"check": "freshness", "result": "flagged", "detail": "Test flag"}],
-        "passed": 0,
-        "flagged": 1
-    })
-
-    flag = db.insert("assurance_flags", {
-        "report_id": rep["id"],
-        "decision_id": dec_id,
-        "check_type": "freshness",
-        "severity": "critical",
-        "message": "Test blocking flag",
-        "status": "open"
-    })
-
+    dec, rep = decisions("draft", decided_by=regional_id)
+    _flag(dec, rep, "open")
     headers = {"Authorization": f"Bearer {regional_token}"}
-    # Attempt commit while open flag exists -> must fail with 400
-    res = client.post(f"/api/v1/decisions/{dec_id}/commit", headers=headers)
+    res = client.post(f"/api/v1/decisions/{dec['id']}/commit", headers=headers)
     assert res.status_code == 400
     assert "open assurance flag" in res.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_override_flag_requires_reason(regional_token):
+async def test_override_flag_requires_reason(regional_token, regional_id, decisions):
     """Overriding a flag without a valid reason (<5 chars) must be rejected."""
-    flag = db.insert("assurance_flags", {
-        "report_id": str(uuid.uuid4()),
-        "decision_id": str(uuid.uuid4()),
-        "check_type": "completeness",
-        "severity": "critical",
-        "message": "Mandatory doc missing",
-        "status": "open"
-    })
-
+    dec, rep = decisions("draft", decided_by=regional_id)
+    flag = _flag(dec, rep, "open", "completeness")
     headers = {"Authorization": f"Bearer {regional_token}"}
-    # Short reason -> rejected
-    res = client.post(f"/api/v1/assurance/flags/{flag['id']}/override", headers=headers, json={"reason": "no"})
-    assert res.status_code == 422 or res.status_code == 400
 
-    # Valid reason -> accepted
-    res_ok = client.post(
-        f"/api/v1/assurance/flags/{flag['id']}/override",
-        headers=headers,
-        json={"reason": "Document verified via physical file on-site"}
-    )
-    assert res_ok.status_code == 200
+    res = client.post(f"/api/v1/assurance/flags/{flag['id']}/override", headers=headers, json={"reason": "no"})
+    assert res.status_code in (400, 422)
+
+    res_ok = client.post(f"/api/v1/assurance/flags/{flag['id']}/override", headers=headers,
+                         json={"reason": "Document verified via physical file on-site"})
+    assert res_ok.status_code == 200, res_ok.text
     assert res_ok.json()["flag"]["status"] == "overridden"
     assert res_ok.json()["flag"]["reason"] == "Document verified via physical file on-site"
 
 
 @pytest.mark.asyncio
-async def test_commit_succeeds_after_override(regional_token):
+async def test_commit_succeeds_after_override(regional_token, regional_id, decisions):
     """Committing succeeds once all flags are acknowledged or overridden."""
-    dec = db.insert("decisions", {
-        "application_id": str(uuid.uuid4()),
-        "stage_key": "scrutiny",
-        "outcome": "approve",
-        "status": "draft"
-    })
-    dec_id = dec["id"]
-
-    flag = db.insert("assurance_flags", {
-        "report_id": str(uuid.uuid4()),
-        "decision_id": dec_id,
-        "check_type": "source_verification",
-        "severity": "warning",
-        "message": "Advisory warning",
-        "status": "acknowledged"
-    })
-
+    dec, rep = decisions("draft", decided_by=regional_id)
+    _flag(dec, rep, "acknowledged", "source_verification")
     headers = {"Authorization": f"Bearer {regional_token}"}
-    res = client.post(f"/api/v1/decisions/{dec_id}/commit", headers=headers)
-    assert res.status_code == 200
+    res = client.post(f"/api/v1/decisions/{dec['id']}/commit", headers=headers)
+    assert res.status_code == 200, res.text
     assert res.json()["decision"]["status"] == "committed"
 
 
 @pytest.mark.asyncio
-async def test_post_decision_recheck():
+async def test_post_decision_recheck(case_a, decisions):
     """Daily post-decision recheck raises flags for committed decisions whose evidence expired."""
     clock.reset()
     now = clock.now()
-    # Create committed decision citing evidence expiring in 10 days
-    dec = db.insert("decisions", {
-        "application_id": str(uuid.uuid4()),
-        "stage_key": "final_decision",
-        "outcome": "approve",
-        "status": "committed"
-    })
-    dec_id = dec["id"]
-
-    # Link evidence expiring in 10 days
+    dec, _ = decisions("committed")
     exp_date = (now + timedelta(days=10)).strftime("%Y-%m-%d")
-    db.insert("decision_evidence", {
-        "decision_id": dec_id,
-        "document_id": str(uuid.uuid4()),
-        "valid_until": exp_date,
-        "linked_at": now.isoformat()
+    doc = db.insert("documents", {
+        "institution_id": case_a["institution_id"], "doc_type": "lease", "title": f"Recheck test {uuid.uuid4().hex[:6]}",
+        "status": "verified", "valid_until": exp_date, "sha256": hashlib.sha256(b"recheck").hexdigest(),
     })
-
-    # Time jump +15 days -> evidence is now expired
-    clock.advance_days(15)
-
-    recheck_summary = await assurance_service.run_daily_post_decision_recheck()
-    assert recheck_summary["new_flags_raised"] >= 1
-
-    # Clean up clock
-    clock.reset()
+    db.insert("decision_evidence", {
+        "decision_id": dec["id"], "document_id": doc["id"], "valid_until": exp_date,
+        "doc_sha256": doc["sha256"], "linked_at": now.isoformat(),
+    })
+    try:
+        clock.advance_days(15)  # evidence is now expired
+        summary = await assurance_service.run_daily_post_decision_recheck()
+        assert summary["new_flags_raised"] >= 1
+        flags = db.table("assurance_flags").select("check_type").eq("decision_id", dec["id"]).execute().data
+        assert any(f["check_type"] == "post_decision_freshness" for f in flags)
+    finally:
+        clock.reset()
+        db.table("decisions").delete().eq("id", dec["id"]).execute()
+        alert_ids = [a["id"] for a in db.table("alerts").select("id").eq("entity_type", "decision").eq("entity_id", dec["id"]).execute().data]
+        if alert_ids:
+            db.table("notifications").delete().in_("alert_id", alert_ids).execute()
+            db.table("alerts").delete().in_("id", alert_ids).execute()
+        db.table("documents").delete().eq("id", doc["id"]).execute()

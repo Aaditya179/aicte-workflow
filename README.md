@@ -48,8 +48,15 @@ All evaluation accounts use the standard password: `password123`. Click any pers
 | **Scrutiny Officer** | `scrutiny@demo.sih` | Examine submissions, verify documentation, record deficiencies |
 | **Regional Officer** | `regional@demo.sih` | Monitor pendency in Western region, rebalance officer workloads, queue EVCs |
 | **EVC Member** | `evc@demo.sih` | Review on-site visit schedule, conduct inspection, upload EVC reports |
-| **Bureau Officer** | `bureau@demo.sih` | National overview, intervene on Level-3 escalations, verify audit trail |
-| **Administrator** | `admin@demo.sih` | Configure stage SLAs, run Time-Travel simulator, rule maker-checker |
+| **Regional Officer (MFA)** | `mfa.officer@demo.sih` | Same as the regional officer, but signs in with an authenticator app (TOTP) on screen |
+| **EVC Members** | `evc2@demo.sih`, `evc3@demo.sih` | Further EVC members based in Pune and Ahmedabad, for suggested visit dates |
+| **SAC/SHC Member** | `sacshc@demo.sih` | Sees only the cases assigned to them |
+| **Bureau Officer** | `bureau@demo.sih` | National overview, Level-3 escalations, final decisions with Decision Assurance, approves overrides |
+| **Administrator** | `admin@demo.sih` | Proposes SLA and rule changes, runs the time simulator, manages users. No access to case data |
+| **Second Administrator** | `admin2@demo.sih` | Approves the first administrator's rule changes (maker-checker) |
+| **Auditor** | `auditor@demo.sih` | Read-only audit trail, document access logs and reports |
+
+Seeded v2 cases (§15.9): **G** (final decision with four assurance flags), **H** (committed decision whose lease expires in 10 days, so a +15 day jump raises a post-decision flag), **I** (upload `backend/seed/data/sample_lease.png`, also served at `/samples/sample_lease.png`, and accept the suggested expiry date), **J** (the scrutiny officer's next decision raises an anomaly flag).
 
 ---
 
@@ -81,22 +88,29 @@ When statutory deadlines approach or expire, notifications escalate according to
 
 | Escalation Level | Trigger Window | Recipients | Delivery Channels |
 | :--- | :--- | :--- | :--- |
-| **Level 1** | 0 days overdue (Day 0) | Assigned Scrutiny / EVC Officer | In-app notification, Email |
-| **Level 2** | 3 days overdue (Day 3) | Regional Officer & Section Head | Email, SMS, In-app notice |
-| **Level 3** | 7 days overdue (Day 7) | AICTE HQ Bureau Officers & Leadership | Priority Email, SMS, HQ Dashboard |
+| **Level 1** | 0 days overdue (Day 0) | Assigned officer | In-app, email |
+| **Level 2** | 3 days overdue (Day 3) | Regional officer | In-app, email, SMS |
+| **Level 3** | 7 days overdue (Day 7) | Bureau officers | In-app, email, SMS, WhatsApp |
+
+Timelines and chains are settings an administrator edits, with a second administrator approving each change. Email, SMS and WhatsApp carry only the reference number, the alert type and a signed link. Every delivery is tracked per recipient and channel (`/alerts/<id>`); a failed delivery on a critical alert falls back to the next channel. Providers that are not configured (Resend, Twilio) are simulated and marked as such.
 
 ---
 
 ## 5. Security & Privacy Architecture
 
-- **Tamper-Evident Audit Chain**: Every state transition, document submission, and rule edit generates an immutable SHA-256 block containing `prev_hash`, `payload`, `actor_id`, and a monotonic sequence ID.
-- **Strict Role Separation**: Administrators can configure SLA rules and simulation offsets, but **cannot view case documentation or alter case decisions**.
-- **Advisory-Only AI**: Large language models only summarize documentation and draft deficiency notices. **AI never approves, rejects, or advances cases autonomously**.
-- **Data Minimization & DPDP Alignment**: Contact numbers and personal identifiers are masked in summary views and unmasked only upon authorized individual case inspection.
-- **Production Design Roadmap**:
-  - Government SSO (e-Pramaan / Jan Parichay)
-  - Automated ClamAV malware scanning on document ingestion
-  - Time-locked two-admin Maker-Checker approvals for statutory rule updates
+### What the prototype shows
+
+- **Tamper-evident audit chain**: every state transition, document action and rule change is a SHA-256 linked entry; `/audit` verifies the whole chain.
+- **Role separation**: the administrator edits rules and timelines and manages users, but has no route to case data or case actions. The auditor is read-only.
+- **MFA and short sessions**: officer routes reject sessions that have not completed TOTP (`DEMO_MFA_BYPASS` lets the other demo officers skip it; it must be off in any real deployment). Login, OTP and AI endpoints are rate limited, and repeated failed logins lock the account.
+- **Maker-checker**: rule and timeline changes apply only after a second administrator approves; optionally, case reverts and assurance overrides need a bureau officer's approval.
+- **Document protection**: uploads are limited to PDF, PNG and JPG up to 10 MB (checked by content), hashed with SHA-256, kept in a private storage bucket, and served only through links that expire in 5 minutes. Every upload, view, download and verification is logged, and 10 downloads in 5 minutes by one user raises an alert to the bureau.
+- **Advisory-only AI**: models summarise, draft, polish wording and suggest expiry dates. A person confirms every date and sends every message; AI never approves, rejects or advances a case.
+- **Privacy**: emails and phone numbers are masked in list views and revealed (and audited) on the detail view. Exports are limited to officers and auditors and every export is logged. Designed to align with the Digital Personal Data Protection Act, 2023.
+
+### Production design only (not built)
+
+SSO with AICTE systems, maker-checker on every sensitive action, malware scanning (a marked hook exists in `services/storage.py`), alerts on unusual login locations, backups with tested restore, disaster recovery, centralised logging and monitoring, VAPT, government-approved hosting, and retention rules agreed with AICTE.
 
 ---
 
@@ -135,4 +149,8 @@ Portal interface: `http://localhost:3000` (Redirects to `/welcome`)
 cd backend
 pytest tests/
 ```
-All 47 tests cover workflow engine state transitions, scheduler idempotent alerting, multi-tier escalation, cryptographic audit verification, and differentiators (Risk & Health scoring).
+The tests cover workflow transitions, scheduler alerting and escalation, the audit chain, risk and health scores, Decision Assurance on seeded cases G, H and J, OCR, EVC date suggestions, channel delivery and webhooks, and the security items in §15.11. They run against the Supabase project in `backend/.env` and write test rows to it, so point them at a test project. CI (`.github/workflows/ci.yml`) runs `pip-audit` and `npm audit`.
+
+### Optional delivery providers
+
+Set `RESEND_API_KEY` (and `RESEND_WEBHOOK_SECRET`) for email, and `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM`, `TWILIO_WHATSAPP_FROM` for SMS and WhatsApp. Point the providers' webhooks at `<API_PUBLIC_URL>/api/v1/webhooks/resend` and `/webhooks/twilio`. Without them, deliveries are simulated.

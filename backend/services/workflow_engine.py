@@ -178,6 +178,7 @@ class WorkflowEngine:
         template_code: str,
         actor: AuthenticatedUser,
         region_id: Optional[str] = None,
+        reason: Optional[str] = None,
     ) -> dict:
         """Submit a new application and place it at the first stage."""
         tmpl = _get_template_by_code(template_code)
@@ -216,7 +217,7 @@ class WorkflowEngine:
             to_stage=start_stage_key,
             action="start",
             actor_id=actor.id,
-            reason=None,
+            reason=reason,
             entered_at=entered_at,
         )
 
@@ -227,6 +228,7 @@ class WorkflowEngine:
             entity_id=created["id"],
             before=None,
             after=created,
+            reason=reason,
         )
 
         if assigned_to:

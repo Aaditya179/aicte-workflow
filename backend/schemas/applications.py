@@ -4,9 +4,17 @@ from datetime import datetime
 
 
 class ApplicationCreate(BaseModel):
+    """The workflow is not part of the request: services.routing decides it."""
     application_type: str
-    template_code: str
+    academic_year: str
+    details: dict = {}
+    declaration: bool = False
     institution_id: Optional[str] = None  # Pulled from actor's profile if not provided
+
+
+class RoutePreview(BaseModel):
+    application_type: str
+    details: dict = {}
 
 
 class ApplicationAdvance(BaseModel):
@@ -68,3 +76,5 @@ class ApplicationResponse(BaseModel):
     stage_owner_role: Optional[str] = None
     next_stage: Optional[str] = None
     can_return: Optional[bool] = None
+    # Detail view only: the submitted form and how the case was routed
+    form: Optional[dict] = None

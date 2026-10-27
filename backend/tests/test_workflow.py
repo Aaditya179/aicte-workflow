@@ -64,15 +64,27 @@ def _get_institution_id(token: str) -> str:
     assert r.status_code == 200
     return r.json()["institution_id"]
 
+# An application type that the routing rules send to each workflow, whatever the institution's record
+ROUTED_TO = {
+    "ONLY_SCRUTINY": ("change_of_name", {"new_name": "Demo Institute of Technology and Science",
+                                         "reason": "Approved by the trust"}),
+    "SCRUTINY_EVC": ("new_institution", {"proposed_name": "Demo School of Architecture", "trust_name": "Demo Trust",
+                                         "new_address": "Plot 4, Navi Mumbai", "land_area": "2.5 acres",
+                                         "level": "UG", "discipline": "Architecture"}),
+    "ONLY_EVC": ("restoration_of_intake", {"course_name": "B.Tech Civil Engineering", "intake_to_restore": 60,
+                                           "compliance_summary": "Faculty vacancies filled"}),
+    "EVC_SAC_SHC": ("appeal", {"reference_application_no": "AICTE/202609/ABC123",
+                               "grounds": "Intake reduced despite compliance"}),
+}
+
+
 def _submit_app(token: str, template_code: str) -> dict:
     inst_id = _get_institution_id(token)
+    app_type, details = ROUTED_TO[template_code]
     r = client.post(
         "/api/v1/applications",
-        json={
-            "application_type": f"Test Application - {template_code}",
-            "template_code": template_code,
-            "institution_id": inst_id
-        },
+        json={"application_type": app_type, "academic_year": "2027-28", "details": details,
+              "declaration": True, "institution_id": inst_id},
         headers=_headers(token)
     )
     assert r.status_code == 201, f"Submit failed: {r.text}"
@@ -87,19 +99,36 @@ class TestApplicationSubmit:
         assert app["current_stage"] == "scrutiny"
         assert app["status"] == "in_progress"
 
-    def test_institution_cannot_submit_wrong_template(self, institution_token):
+    def test_workflow_is_routed_not_chosen(self, institution_token):
+        for code, (app_type, details) in ROUTED_TO.items():
+            r = client.post("/api/v1/applications/route-preview", headers=_headers(institution_token),
+                            json={"application_type": app_type, "details": details})
+            assert r.status_code == 200, r.text
+            assert r.json()["template_code"] == code and r.json()["reasons"]
+        # A workflow named in the request is ignored
         inst_id = _get_institution_id(institution_token)
-        r = client.post(
-            "/api/v1/applications",
-            json={"application_type": "Test", "template_code": "NONEXISTENT", "institution_id": inst_id},
-            headers=_headers(institution_token)
-        )
-        assert r.status_code == 400
+        app_type, details = ROUTED_TO["ONLY_SCRUTINY"]
+        r = client.post("/api/v1/applications", headers=_headers(institution_token),
+                        json={"application_type": app_type, "academic_year": "2027-28", "details": details,
+                              "declaration": True, "institution_id": inst_id, "template_code": "EVC_SAC_SHC"})
+        assert r.status_code == 201 and r.json()["current_stage"] == "scrutiny"
+        detail = client.get(f"/api/v1/applications/{r.json()['id']}", headers=_headers(institution_token)).json()
+        assert detail["form"]["routing"]["template_code"] == "ONLY_SCRUTINY"
+        assert detail["form"]["details"]["new_name"] == details["new_name"]
+
+    def test_institution_cannot_submit_incomplete_application(self, institution_token):
+        inst_id = _get_institution_id(institution_token)
+        base = {"academic_year": "2027-28", "declaration": True, "institution_id": inst_id}
+        for body in ({"application_type": "increase_in_intake", "details": {"level": "UG"}},
+                     {"application_type": "made_up", "details": {}},
+                     {**dict(zip(("application_type", "details"), ROUTED_TO["ONLY_SCRUTINY"])), "declaration": False}):
+            r = client.post("/api/v1/applications", json={**base, **body}, headers=_headers(institution_token))
+            assert r.status_code == 422, r.text
 
     def test_bureau_officer_cannot_submit_application(self, bureau_token):
         r = client.post(
             "/api/v1/applications",
-            json={"application_type": "Bad Submit", "template_code": "ONLY_SCRUTINY", "institution_id": "fake-id"},
+            json={"application_type": "change_of_name", "academic_year": "2027-28", "declaration": True, "institution_id": "fake-id"},
             headers=_headers(bureau_token)
         )
         assert r.status_code == 403
@@ -185,7 +214,7 @@ class TestAdminHasNoCaseAccess:
         inst_id = _get_institution_id(institution_token)
         r = client.post(
             "/api/v1/applications",
-            json={"application_type": "Admin attempt", "template_code": "ONLY_EVC", "institution_id": inst_id},
+            json={"application_type": "change_of_name", "academic_year": "2027-28", "declaration": True, "institution_id": inst_id},
             headers=_headers(admin_token)
         )
         assert r.status_code == 403

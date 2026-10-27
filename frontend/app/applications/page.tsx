@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchApi } from '@/lib/api';
+import { typeLabel } from '@/components/ApplicationFormCard';
 import {
   FileText, Clock, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
   ChevronRight, Filter, Search, PlusCircle, Loader2, ArrowRight
@@ -214,7 +215,7 @@ export default function ApplicationsPage() {
                       <td className="px-4 py-3.5 font-mono text-xs font-bold text-[#C25E26]">
                         {app.application_no}
                       </td>
-                      <td className="px-4 py-3.5 text-stone-700 max-w-48 truncate">{app.application_type}</td>
+                      <td className="px-4 py-3.5 text-stone-700 max-w-48 truncate">{typeLabel(app.application_type)}</td>
                       <td className="px-4 py-3.5">
                         <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#FBF0E4] text-[#C25E26] border border-[#F0D5BE] font-medium">
                           {STAGE_LABELS[app.current_stage] || app.current_stage}

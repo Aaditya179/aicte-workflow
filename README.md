@@ -58,6 +58,7 @@ Every demo account uses the password `password123`, and the welcome and login pa
 
 **Workflow and deadlines**
 - Configurable approval workflows (Scrutiny → EVC → SAC/SHC → final decision), with each stage owned by one role and assigned to the least-loaded officer.
+- Applications are routed automatically: the workflow follows from what is applied for (eight types, from extension of approval to appeals) and the institution's record (health score, expired documents, NBA accreditation). The institution sees the route and the reasons before submitting, and cannot choose it.
 - A live SLA countdown on every stage, a delay-risk score (0–100) per application and a compliance health score (0–100) per institution.
 - A compliance calendar for institutions: undertakings, document expiries and upcoming deadlines in one place.
 
@@ -136,7 +137,7 @@ The same steps are on the [welcome page](https://nirikshan-six.vercel.app/welcom
 
 | # | Sign in as | Do this | Look for |
 | :-: | :--- | :--- | :--- |
-| 1 | Institution | Open **New application**, keep the Scrutiny and EVC workflow, and submit. | It starts in Scrutiny with a due date 15 days away. |
+| 1 | Institution | Open **New application**, choose **Extension of approval**, answer **Yes** to the changes question, accept the declaration and submit. | The route (Scrutiny and EVC) is decided for you, with its reasons. It starts in Scrutiny with a due date 15 days away. |
 | 2 | Scrutiny officer | Open the newest application, read the AI case summary, press **Advance to EVC Queue**. | The stage tracker moves to the EVC queue, owned by the regional officer. |
 | 3 | Admin | In the **Time Simulator**, press **+7 days**. | Case B goes from due in 2 days to 5 days overdue, and its escalations fire. |
 | 4 | Regional officer | Open **Alerts**, find `DEMO-CASE-B` at level 2, press **Delivery**. | In-app, email and SMS delivery for each recipient. |

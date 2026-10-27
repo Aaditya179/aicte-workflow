@@ -11,6 +11,7 @@ import {
 import AssurancePanel from '@/components/AssurancePanel';
 import CaseAssistantPanel from '@/components/CaseAssistantPanel';
 import { useMe } from '@/components/ui';
+import ApplicationFormCard, { typeLabel, type ApplicationForm } from '@/components/ApplicationFormCard';
 
 interface Application {
   id: string;
@@ -27,6 +28,7 @@ interface Application {
   stage_owner_role: string | null;
   next_stage: string | null;
   can_return: boolean | null;
+  form: ApplicationForm | null;
 }
 
 const ROLE_NAMES: Record<string, string> = {
@@ -178,7 +180,7 @@ function ApplicationDetailContent() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-xl font-serif font-bold text-[#1C1917] font-mono">{app.application_no}</h1>
-              <p className="text-sm text-stone-500 mt-0.5">{app.application_type}</p>
+              <p className="text-sm text-stone-500 mt-0.5">{typeLabel(app.application_type)}{app.form ? ` · ${app.form.academic_year}` : ''}</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Link
@@ -208,6 +210,8 @@ function ApplicationDetailContent() {
             <h2 className="text-sm font-serif font-bold text-[#1C1917] mb-4 uppercase tracking-wider">Stage Tracker</h2>
             <StageStepper currentStage={app.current_stage} stages={approxStages} />
           </div>
+
+          {app.form && <ApplicationFormCard form={app.form} />}
 
           {/* Actions */}
           <div className="bg-white rounded-2xl border border-[#E8E2D8] p-5 space-y-3 shadow-2xs">

@@ -1,3 +1,7 @@
+import hashlib
+import json
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from typing import Optional, List
@@ -6,11 +10,11 @@ from supabase import create_client
 from core.config import settings
 from core.security import AuthenticatedUser, get_current_user, require_role, require_case_access
 from schemas.applications import (
-    ApplicationCreate, ApplicationAdvance, ApplicationReturn,
+    ApplicationCreate, RoutePreview, ApplicationAdvance, ApplicationReturn,
     ApplicationRevert, ApplicationReassign, ApplicationResponse
 )
 from services.workflow_engine import engine
-from services import audit, approvals
+from services import audit, approvals, routing
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -89,19 +93,18 @@ async def get_application(
     app = _get_scoped_app(app_id, actor)
     tmpl = _supabase.table("workflow_templates").select("definition").eq("id", app["template_id"]).limit(1).execute().data
     stage = ((tmpl[0]["definition"] if tmpl else {}).get("stages") or {}).get(app["current_stage"]) or {}
+    form = _supabase.table("documents").select("id, metadata").eq("application_id", app_id) \
+        .eq("doc_type", "application_form").order("created_at").limit(1).execute().data
     return {**app, "stage_owner_role": stage.get("owner_role"), "next_stage": stage.get("next"),
-            "can_return": bool(stage.get("on_return"))}
+            "can_return": bool(stage.get("on_return")),
+            "form": {**form[0]["metadata"], "document_id": form[0]["id"]} if form and form[0].get("metadata") else None}
 
 
 # ─── Submit ──────────────────────────────────────────────────────────────────
 
-@router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
-async def submit_application(
-    body: ApplicationCreate,
-    actor: AuthenticatedUser = Depends(require_role(["institution"])),
-):
-    institution_id = body.institution_id or actor.institution_id
-    if actor.role == "institution" and institution_id != actor.institution_id:
+def _institution_for(actor: AuthenticatedUser, institution_id: Optional[str]) -> dict:
+    institution_id = institution_id or actor.institution_id
+    if institution_id != actor.institution_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Institutions can only submit applications for themselves"
@@ -111,21 +114,66 @@ async def submit_application(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="institution_id is required"
         )
+    res = _supabase.table("institutions").select("id, name, aicte_id, region_id").eq("id", institution_id).limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found")
+    return res.data[0]
 
-    # Get region from institution
-    inst_res = _supabase.table("institutions").select("region_id").eq("id", institution_id).limit(1).execute()
-    region_id = inst_res.data[0]["region_id"] if inst_res.data else actor.region_id
 
+@router.post("/route-preview")
+async def preview_route(
+    body: RoutePreview,
+    actor: AuthenticatedUser = Depends(require_role(["institution"])),
+):
+    """How an application would be processed, decided by the routing rules, before it is submitted."""
+    inst = _institution_for(actor, None)
+    try:
+        return routing.route(body.application_type, body.details, inst["id"], inst.get("region_id"))
+    except routing.RoutingError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
+async def submit_application(
+    body: ApplicationCreate,
+    actor: AuthenticatedUser = Depends(require_role(["institution"])),
+):
+    inst = _institution_for(actor, body.institution_id)
+    if not body.declaration:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="The declaration must be accepted to submit")
+    if not re.fullmatch(r"20\d\d-\d\d", body.academic_year or ""):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="Academic year must look like 2027-28")
+    try:
+        route = routing.route(body.application_type, body.details, inst["id"], inst.get("region_id"))
+    except routing.RoutingError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    reason = f"Routed to {route['workflow_name']}: " + " ".join(route["reasons"])
     try:
         app = engine.start(
-            institution_id=institution_id,
+            institution_id=inst["id"],
             application_type=body.application_type,
-            template_code=body.template_code,
+            template_code=route["template_code"],
             actor=actor,
-            region_id=region_id,
+            region_id=inst.get("region_id"),
+            reason=reason,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # The submitted form becomes the first document in the case file
+    form = {
+        "application_type": body.application_type, "academic_year": body.academic_year,
+        "details": route["details"], "institution_name": inst["name"], "aicte_id": inst.get("aicte_id"),
+        "routing": {k: route[k] for k in ("template_code", "workflow_name", "reasons")},
+    }
+    _supabase.table("documents").insert({
+        "institution_id": inst["id"], "application_id": app["id"], "doc_type": "application_form",
+        "title": f"Application form ({app['application_no']})", "uploaded_by": actor.id, "version": 1,
+        "sha256": hashlib.sha256(json.dumps(form, sort_keys=True).encode()).hexdigest(), "metadata": form,
+    }).execute()
     return app
 
 
